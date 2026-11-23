@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fork &amp; Clone</title>
+  <script src="/preload.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:ROND,opsz,slnt,wdth,wght@0..100,6..144,-10..0,92..100,100..1000&family=Google+Sans+Code:ital,wght@0,300..800;1,300..800&display=swap">
+  <link rel="stylesheet" href="/styles.css?v=2.0.0">
+</head>
+<body>
+  <div id="loading" class="loading" aria-live="polite">
+    <span class="skel" style="width: 56%; height: 14px"></span>
+    <span class="skel" style="width: 100%; height: 34px; border-radius: 8px"></span>
+    <span class="skel" style="width: 100%; height: 64px; border-radius: 8px"></span>
+    <span class="skel" style="width: 100%; height: 64px; border-radius: 8px"></span>
+  </div>
+
+  <div id="panel" class="panel hidden">
+    <header class="header">
+      <div id="parent-crumb" class="parent-crumb hidden"></div>
+
+      <div class="title-row">
+        <div class="title-col">
+          <h1 id="conv-title" class="conv-title">Conversation</h1>
+          <div id="conv-meta" class="conv-meta num">0 tur</div>
+        </div>
+        <button type="button" id="clone-btn" class="primary-btn" title="Mevcut sohbeti son halinden birebir klonla">
+          <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="5" y="5" width="8.5" height="8.5" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M3.5 11H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h6.5A1.5 1.5 0 0 1 11 3v.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <span>Clone</span>
+        </button>
+      </div>
+
+      <div class="controls-bar">
+        <label class="search-box">
+          <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <path d="m10.25 10.25 3.25 3.25" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <input id="search-input" type="search" placeholder="Mesaj ara… (/)" autocomplete="off">
+        </label>
+        <button type="button" id="sort-btn" class="icon-pill" title="Sıralamayı değiştir">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 3v10M2.5 10.5 5 13l2.5-2.5M11 13V3M8.5 5.5 11 3l2.5 2.5"/>
+          </svg>
+          <span id="sort-label">Kronolojik</span>
+        </button>
+      </div>
+
+      <div class="options-row">
+        <input id="custom-title" type="text" class="text-input" placeholder="Yeni dal adı (isteğe bağlı)" autocomplete="off">
+        <label class="check-wrap" title="Fork veya klon oluşunca yeni sohbeti hemen aç">
+          <input id="auto-open" type="checkbox" checked>
+          <span>Hemen aç</span>
+        </label>
+      </div>
+
+      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    </header>
+
+    <main id="timeline-scroll" class="timeline-scroll" aria-label="Mesaj zaman çizelgesi">
+      <div id="turns-list" class="timeline"></div>
+    </main>
+
+    <button type="button" id="jump-head" class="jump-head hidden" title="En son mesaja (HEAD) git">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M8 3v9.5M4 9l4 4 4-4"/>
+      </svg>
+      <span>HEAD</span>
+    </button>
+  </div>
+
+  <section id="empty" class="empty hidden">
+    <div class="empty-card">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="6" cy="6" r="2.5"/>
+        <circle cx="18" cy="6" r="2.5"/>
+        <circle cx="12" cy="18" r="2.5"/>
+        <path d="M6 8.5v2c0 2.5 6 2.5 6 5M18 8.5v2c0 2.5-6 2.5-6 5"/>
+      </svg>
+      <h2 class="empty-title">Henüz mesaj yok</h2>
+      <p id="empty-desc" class="empty-desc">Bu sohbette en az bir tamamlanmış tur olduğunda buradan istediğin mesajdan fork veya klon alabilirsin.</p>
+    </div>
+  </section>
+
+  <script src="/app.js?v=2.0.0"></script>
+</body>
+</html>
