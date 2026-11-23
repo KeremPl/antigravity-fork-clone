@@ -226,4 +226,39 @@ describe('context window tracking & protobuf limit decoder', () => {
     assert.equal(res.context.usedTokens, 12000);
     assert.equal(res.context.usedPercent, 2.3);
   });
+
+  it('safely handles truncated or malformed protobuf buffers without throwing', () => {
+    assert.equal(extractExecutorContextLimit(new Uint8Array([0xff, 0xff, 0xff])), 0);
+    // Field 10 with length larger than remaining buffer
+    assert.equal(extractExecutorContextLimit(new Uint8Array([(10 << 3) | 2, 99, 1, 2])), 0);
+    assert.equal(extractExecutorContextLimit(null), 0);
+  });
+
+  it('adds trailing uncounted step estimates after the latest PLANNER_RESPONSE', () => {
+    const lines = [
+      JSON.stringify({ step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', status: 'DONE', content: 'Hi' }),
+      JSON.stringify({
+        step_index: 1,
+        source: 'MODEL',
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        model: 'gemini-4-neon-high',
+        input_tokens: 1000,
+        cache_read_tokens: 3000,
+        output_tokens: 500,
+        content: 'First reply',
+      }),
+      // Follow-up user message not yet answered (400 chars -> ~100 estimated tokens)
+      JSON.stringify({
+        step_index: 2,
+        source: 'USER_EXPLICIT',
+        type: 'USER_INPUT',
+        status: 'DONE',
+        content: 'x'.repeat(400),
+      }),
+    ];
+    const res = parseTranscriptLines(lines, [], 0, 256000);
+    assert.equal(res.context.usedTokens, 4600);
+    assert.equal(res.busy, true);
+  });
 });

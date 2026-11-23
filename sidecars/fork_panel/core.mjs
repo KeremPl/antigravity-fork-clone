@@ -146,7 +146,6 @@ export function parseTranscriptLines(lines, childEdges = [], summaryStepCount = 
         turnNumber: turns.length + 1,
         userStepIndex: idx,
         endStepIndex: -1,
-        forkBeforeStepIndex: -1,
         createdAt: obj.created_at || '',
         replyAt: '',
         userPreview: cleanPreview(userText || (hasMedia ? '[Image / Attachment]' : '(empty message)'), 220),
@@ -231,12 +230,9 @@ export function parseTranscriptLines(lines, childEdges = [], summaryStepCount = 
     }
   }
 
-  let prevCompletedEnd = -1;
   let prevTokens = 0;
   for (const t of turns) {
-    t.forkBeforeStepIndex = prevCompletedEnd;
     t.canForkAfter = t.endStepIndex > t.userStepIndex;
-    t.canForkBefore = t.forkBeforeStepIndex >= 0;
     if (t.promptTokens > 0) {
       t.tokenDelta = prevTokens > 0 ? Math.max(0, t.promptTokens - prevTokens) : 0;
       prevTokens = t.promptTokens;
@@ -249,9 +245,6 @@ export function parseTranscriptLines(lines, childEdges = [], summaryStepCount = 
         createdAt: e.createdAt || '',
         kind: e.kind || 'fork',
       }));
-    if (t.canForkAfter) {
-      prevCompletedEnd = t.endStepIndex;
-    }
   }
 
   // Compute exact context window usage from latest PLANNER_RESPONSE (+ trailing uncounted steps)

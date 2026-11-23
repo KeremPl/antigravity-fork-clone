@@ -125,6 +125,7 @@
     expandedUsers: new Set(),
     expandedTools: new Set(),
     renamingTurn: null, // turnNumber currently showing inline rename input
+    renameDraft: '',
     stickBottom: true,
     didInitialScroll: false,
     timer: null,
@@ -232,7 +233,7 @@
     if (!text) return '';
 
     const blocks = [];
-    const fenceRe = /```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g;
+    const fenceRe = /```[a-zA-Z0-9_+#.-]*\n([\s\S]*?)```/g;
     let last = 0;
     let m;
     while ((m = fenceRe.exec(text)) !== null) {
@@ -400,7 +401,7 @@
     const merged = [];
     for (let i = 0; i < parts.length; i++) {
       const cur = parts[i];
-      if (/^\d+$/.test(cur) && i + 1 < parts.length && /^\d+$/.test(parts[i + 1])) {
+      if (/^\d{1,2}$/.test(cur) && i + 1 < parts.length && /^\d{1,2}$/.test(parts[i + 1])) {
         merged.push(`${cur}.${parts[i + 1]}`);
         i += 1;
       } else if (/^gpt$/i.test(cur)) {
@@ -427,7 +428,7 @@
 
     wrap.classList.remove('hidden');
     const pct = Math.max(0, Math.min(100, Number(ctx.usedPercent) || 0));
-    const usedRound = Math.round(pct);
+    const usedRound = pct > 0 ? Math.max(1, Math.round(pct)) : 0;
     const leftPct = Math.max(0, 100 - usedRound);
 
     const circumference = 2 * Math.PI * 7.5; // 47.1239
@@ -457,6 +458,25 @@
     } else {
       subEl.classList.add('hidden');
     }
+    clampContextPopover();
+  }
+
+  function clampContextPopover() {
+    const pop = $('ctx-popover');
+    if (!pop) return;
+    pop.style.setProperty('--ctx-pop-shift', '0px');
+    const rect = pop.getBoundingClientRect();
+    if (!rect.width) return;
+    const pad = 8;
+    let shift = 0;
+    if (rect.right > window.innerWidth - pad) {
+      shift = window.innerWidth - pad - rect.right;
+    } else if (rect.left < pad) {
+      shift = pad - rect.left;
+    }
+    if (shift !== 0) {
+      pop.style.setProperty('--ctx-pop-shift', `${Math.round(shift)}px`);
+    }
   }
 
   function renderParentCrumb(snap) {
@@ -468,8 +488,7 @@
       return;
     }
     const L = t();
-    const originTag =
-      p.kind === 'clone' ? L.clonedFrom : p.turnNumber ? L.forkedFromTurn(p.turnNumber) : L.forkedFrom;
+    const originTag = p.turnNumber ? L.forkedFromTurn(p.turnNumber) : L.forkedFrom;
     el.classList.remove('hidden');
     el.innerHTML = `
       <div class="parent-crumb-left">
@@ -536,6 +555,12 @@
       return;
     }
 
+    const prevRenameInput = document.activeElement?.classList?.contains('rename-input')
+      ? document.activeElement
+      : null;
+    const prevSelStart = prevRenameInput?.selectionStart ?? null;
+    const prevSelEnd = prevRenameInput?.selectionEnd ?? null;
+
     // CHAT MODE — authentic Antigravity conversation mirror
     list.innerHTML = items
       .map((item) => {
@@ -589,7 +614,7 @@
         const renameHtml = isRenaming
           ? `
             <form class="inline-rename" data-rename-form="${item.turnNumber}" data-fork-step="${item.endStepIndex}">
-              <input type="text" class="rename-input" placeholder="${esc(L.renamePlaceholder(defTitle))}" autocomplete="off">
+              <input type="text" class="rename-input" value="${esc(state.renameDraft)}" placeholder="${esc(L.renamePlaceholder(defTitle))}" autocomplete="off">
               <button type="submit" class="primary-btn">${esc(L.confirmFork)}</button>
               <button type="button" class="ghost-btn" data-cancel-rename="1">${esc(L.cancel)}</button>
             </form>
@@ -662,15 +687,33 @@
 
     if (state.renamingTurn !== null) {
       const inp = list.querySelector('.rename-input');
-      if (inp) inp.focus();
+      if (inp) {
+        inp.focus();
+        if (prevSelStart !== null && prevSelEnd !== null) {
+          try { inp.setSelectionRange(prevSelStart, prevSelEnd); } catch {}
+        } else {
+          const end = inp.value.length;
+          try { inp.setSelectionRange(end, end); } catch {}
+        }
+      }
     }
   }
 
   function render(snap) {
     const prevTurnCount = state.snap?.turnCount || 0;
     const prevConv = state.snap?.conversationId || '';
+    const switchedConv = Boolean(prevConv && snap?.conversationId && prevConv !== snap.conversationId);
     state.snap = snap;
     $('loading').classList.add('hidden');
+
+    if (switchedConv) {
+      hideToast();
+      state.renamingTurn = null;
+      state.renameDraft = '';
+      state.expandedReplies.clear();
+      state.expandedUsers.clear();
+      state.expandedTools.clear();
+    }
 
     if (!snap || !snap.found || !snap.turns?.length) {
       $('panel').classList.add('hidden');
@@ -691,11 +734,6 @@
 
     renderTurns();
 
-    const switchedConv = prevConv && prevConv !== snap.conversationId;
-    if (switchedConv) {
-      hideToast();
-      state.renamingTurn = null;
-    }
     const addedTurn = snap.turnCount > prevTurnCount;
     if (!state.didInitialScroll || switchedConv) {
       state.didInitialScroll = true;
@@ -721,6 +759,7 @@
     const L = t();
     state.busyAction = true;
     state.renamingTurn = null;
+    state.renameDraft = '';
     applyCutoffPreview(null);
     $('clone-btn').disabled = true;
     renderTurns();
@@ -837,6 +876,15 @@
 
   $('jump-head').addEventListener('click', () => scrollToLatest(true));
   $('chat-scroll').addEventListener('scroll', updateJumpButton, { passive: true });
+  $('ctx-ring-wrap')?.addEventListener('mouseenter', clampContextPopover);
+  $('ctx-ring-wrap')?.addEventListener('focusin', clampContextPopover);
+  window.addEventListener('resize', clampContextPopover, { passive: true });
+
+  document.addEventListener('input', (e) => {
+    if (e.target.classList?.contains('rename-input')) {
+      state.renameDraft = e.target.value || '';
+    }
+  });
 
   document.addEventListener('mouseover', (e) => {
     const btn = e.target.closest('[data-preview-cutoff]');
@@ -878,11 +926,13 @@
       e.stopPropagation();
       const tn = Number(renameBtn.dataset.openRename);
       state.renamingTurn = state.renamingTurn === tn ? null : tn;
+      state.renameDraft = '';
       renderTurns();
       return;
     }
     if (e.target.closest('[data-cancel-rename]')) {
       state.renamingTurn = null;
+      state.renameDraft = '';
       renderTurns();
       return;
     }
@@ -932,6 +982,7 @@
     } else if (e.key === 'Escape') {
       if (state.renamingTurn !== null) {
         state.renamingTurn = null;
+        state.renameDraft = '';
         renderTurns();
       } else if (isInput && active.id === 'search-input') {
         $('search-input').value = '';

@@ -1,6 +1,6 @@
 # Antigravity Fork & Clone
 
-**Native message-level conversation forking and instant full-chat cloning inside the Google Antigravity Desktop App** — with a Git-graph timeline side panel powered directly by Antigravity's own built-in `ForkConversation` engine.
+**Native message-level conversation forking and instant full-chat cloning inside the Google Antigravity Desktop App** — with an Antigravity-native Mini-Chat side panel and live context window ring powered directly by Antigravity's built-in `ForkConversation` engine.
 
 - **Zero SQLite / Protobuf writes** — delegates the actual fork directly to Antigravity's local Language Server (`ForkConversation` + `UpdateConversationAnnotations`)
 - **Real native conversations** — forked chats appear immediately in the exact same project with full native message bubbles, tool cards, and history (no copy-paste summary prompts, no app restarts)
@@ -69,8 +69,8 @@ node install.mjs --uninstall
 1. Open any conversation in **Antigravity Desktop**.
 2. Click **`+`** in the right-hand side panel and select **Fork & Clone** (right-click the tab → **Pin Tab** to keep it handy across sessions).
 3. Or type `/fork` in chat.
-4. Click **Clone** for a full copy, or click **Fork here** / **Before** on any completed turn.
-5. Press `/` to search messages (`Esc` to clear).
+4. Click **Clone** for a full copy, or click **`⑂ Fork`** (or **`✎`** for a custom branch title) beneath any completed AI response.
+5. Press `/` to search messages (`Esc` to clear), or hover the header ring to inspect context window usage.
 
 ---
 
@@ -78,12 +78,14 @@ node install.mjs --uninstall
 
 ```text
 sidecars/fork_panel/
-  main.mjs      Read-only transcript.jsonl + conversation_summaries.db parser
+  core.mjs      Pure transcript.jsonl parser, protobuf compaction-limit decoder,
+                context window tracker, and hierarchical auto-title helpers
+  main.mjs      Cached read-only transcript/SQLite reader + early ETag short-circuit
                 + POST /api/fork -> LanguageServerService/ForkConversation
                 + UpdateConversationAnnotations (optional custom title)
   index.html    Native side-pane Web UI (synced to host theme tokens via /preload.js)
-  styles.css    Light/dark theme-aware Git-graph timeline styles
-  app.js        Timeline polling, hover cut preview, inline inspector, EN/TR i18n
+  styles.css    Light/dark theme-aware Mini-Chat & Compact timeline styles
+  app.js        Timeline polling, hover cut preview, context ring, Markdown renderer, EN/TR i18n
 ```
 
 - **Read-only on Antigravity's data**: Never writes to `conversations/*.db` or `conversation_summaries.db`.
@@ -104,7 +106,7 @@ node --test
 
 - **Tested on:** Windows 10 + Antigravity Desktop `v2.34.0`
 - **macOS / Linux:** Written with pure cross-platform Node.js (`path.join`, `homedir()`), but community testing and PRs on macOS & Linux are very welcome!
-- **Known limitation:** Antigravity's `sidecar_sdk` iframe bridge does not currently expose a `scrollToStep` method to scroll the main chat pane to a clicked message; clicking a card instead expands the full prompt, reply, and tool list inline.
+- **Known limitation:** Antigravity's `sidecar_sdk` iframe bridge does not currently expose a `scrollToStep` method to scroll the main chat pane to a clicked message; instead, the panel renders the full Markdown conversation inline (and clicking any Compact row jumps directly to that turn in Chat view).
 
 Issues, bug reports, and pull requests are welcome.
 

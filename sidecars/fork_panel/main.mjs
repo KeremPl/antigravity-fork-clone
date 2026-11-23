@@ -11,7 +11,7 @@
  *   conversation ID.
  */
 
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import { homedir } from 'node:os';
@@ -54,12 +54,53 @@ function getLineagePath() {
   return join(homedir(), '.gemini', 'antigravity', 'sidecar_data', 'fork-clone', 'fork_panel', 'lineage.json');
 }
 
+const MAX_CACHE_ENTRIES = 64;
+const lineageCache = { path: '', sig: '', data: { edges: [] } };
+const summaryCache = new Map();
+const executorLimitCache = new Map();
+
+function statSig(p) {
+  try {
+    const s = statSync(p);
+    return `${s.mtimeMs}:${s.size}`;
+  } catch {
+    return '';
+  }
+}
+
+function dbStatSig(dbPath) {
+  const mainSig = statSig(dbPath);
+  if (!mainSig) return '';
+  const walSig = statSig(`${dbPath}-wal`);
+  return walSig ? `${mainSig}|${walSig}` : mainSig;
+}
+
+function setBoundedCache(map, key, value) {
+  if (map.size >= MAX_CACHE_ENTRIES && !map.has(key)) {
+    const oldest = map.keys().next().value;
+    map.delete(oldest);
+  }
+  map.set(key, value);
+}
+
 function readLineage() {
   const p = getLineagePath();
-  if (!existsSync(p)) return { edges: [] };
+  const sig = statSig(p);
+  if (!sig) {
+    lineageCache.path = p;
+    lineageCache.sig = '';
+    lineageCache.data = { edges: [] };
+    return lineageCache.data;
+  }
+  if (lineageCache.path === p && lineageCache.sig === sig) {
+    return lineageCache.data;
+  }
   try {
     const parsed = JSON.parse(readFileSync(p, 'utf-8'));
-    return { edges: Array.isArray(parsed?.edges) ? parsed.edges : [] };
+    lineageCache.path = p;
+    lineageCache.sig = sig;
+    lineageCache.data = { edges: Array.isArray(parsed?.edges) ? parsed.edges : [] };
+    return lineageCache.data;
   } catch {
     return { edges: [] };
   }
@@ -67,13 +108,19 @@ function readLineage() {
 
 function appendLineageEdge(edge) {
   const p = getLineagePath();
-  const data = readLineage();
-  data.edges.unshift(edge);
+  const current = readLineage();
+  const nextEdges = [edge, ...current.edges];
   // Keep latest 500 edges
-  if (data.edges.length > 500) data.edges.length = 500;
+  if (nextEdges.length > 500) nextEdges.length = 500;
+  const data = { edges: nextEdges };
   try {
     mkdirSync(dirname(p), { recursive: true });
-    writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+    const tmp = `${p}.tmp`;
+    writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
+    renameSync(tmp, p);
+    lineageCache.path = p;
+    lineageCache.sig = statSig(p);
+    lineageCache.data = data;
   } catch (err) {
     console.error('[fork-clone] Failed to persist lineage:', err?.message || err);
   }
@@ -133,7 +180,10 @@ function lsPost(method, body, timeoutMs = 30000) {
 
 function readSummaryMeta(appData, convId) {
   const dbPath = join(appData, 'conversation_summaries.db');
-  if (!existsSync(dbPath)) return null;
+  const sig = dbStatSig(dbPath);
+  if (!sig) return null;
+  const cached = summaryCache.get(convId);
+  if (cached && cached.sig === sig) return cached.row;
   let db = null;
   try {
     db = new DatabaseSync(dbPath, { readOnly: true });
@@ -142,9 +192,11 @@ function readSummaryMeta(appData, convId) {
         'SELECT title, step_count, project_id, workspace_uris, last_modified_time FROM conversation_summaries WHERE conversation_id = ?'
       )
       .get(convId);
-    return row || null;
+    const val = row || null;
+    setBoundedCache(summaryCache, convId, { sig, row: val });
+    return val;
   } catch {
-    return null;
+    return cached?.row || null;
   } finally {
     try {
       db?.close();
@@ -179,6 +231,7 @@ function computeNextAutoTitle(appData, parentTitle, projectId) {
 
   // Also include recent titles from local lineage in case summaries DB lags by a moment
   for (const e of readLineage().edges) {
+    if (projectId && e?.projectId && e.projectId !== projectId) continue;
     if (e?.childTitle) existing.add(String(e.childTitle).trim().toLowerCase());
   }
 
@@ -187,16 +240,23 @@ function computeNextAutoTitle(appData, parentTitle, projectId) {
 
 function readExecutorLimit(appData, convId) {
   const dbPath = join(appData, 'conversations', `${convId}.db`);
-  if (!existsSync(dbPath)) return 0;
+  const sig = dbStatSig(dbPath);
+  const cached = executorLimitCache.get(convId);
+  if (!sig) return cached?.limit || 0;
+  if (cached && cached.sig === sig) return cached.limit;
   let db = null;
   try {
     db = new DatabaseSync(dbPath, { readOnly: true });
     const row = db
       .prepare('SELECT data FROM executor_metadata ORDER BY rowid DESC LIMIT 1')
       .get();
-    return row?.data instanceof Uint8Array ? extractExecutorContextLimit(row.data) : 0;
+    const parsed = row?.data instanceof Uint8Array ? extractExecutorContextLimit(row.data) : 0;
+    const limit = parsed > 0 ? parsed : cached?.limit || 0;
+    setBoundedCache(executorLimitCache, convId, { sig, limit });
+    return limit;
   } catch {
-    return 0;
+    // Keep last known limit on transient SQLITE_BUSY so the ring never flickers
+    return cached?.limit || 0;
   } finally {
     try {
       db?.close();
@@ -204,12 +264,8 @@ function readExecutorLimit(appData, convId) {
   }
 }
 
-function parseTranscriptTurns(appData, convId) {
+function parseTranscriptTurns(appData, convId, clientEtag = '') {
   const logPath = join(appData, 'brain', convId, '.system_generated', 'logs', 'transcript.jsonl');
-  if (!existsSync(logPath)) {
-    return { found: false, turns: [], totalSteps: 0, latestForkStepIndex: -1, etag: '' };
-  }
-
   let st;
   try {
     st = statSync(logPath);
@@ -217,25 +273,30 @@ function parseTranscriptTurns(appData, convId) {
     return { found: false, turns: [], totalSteps: 0, latestForkStepIndex: -1, etag: '' };
   }
 
-  const raw = readFileSync(logPath, 'utf-8');
-  const lines = raw.split(/\r?\n/);
-
   const lineage = readLineage();
   const parentEdge = lineage.edges.find((e) => e.childId === convId) || null;
   const childEdges = lineage.edges.filter((e) => e.parentId === convId);
 
   const summary = readSummaryMeta(appData, convId);
   const executorLimit = readExecutorLimit(appData, convId);
+  const summaryStepCount = Number(summary?.step_count) || 0;
+  const title = (summary?.title || '').trim();
+  const lineageSig = `${parentEdge?.parentId || ''}:${childEdges.length}`;
+  const etag = `${convId}|${st.mtimeMs}|${st.size}|${summaryStepCount}|${title}|${lineageSig}|${executorLimit}`;
+
+  // Early short-circuit before reading or parsing transcript.jsonl
+  if (clientEtag && clientEtag === etag) {
+    return { found: true, conversationId: convId, unchanged: true, etag };
+  }
+
+  const raw = readFileSync(logPath, 'utf-8');
+  const lines = raw.split(/\r?\n/);
   const { turns, totalSteps, latestCompletedNonUserStep, busy, context } = parseTranscriptLines(
     lines,
     childEdges,
-    Number(summary?.step_count) || 0,
+    summaryStepCount,
     executorLimit
   );
-
-  const title = (summary?.title || '').trim();
-  const lineageSig = `${parentEdge?.parentId || ''}:${childEdges.length}`;
-  const etag = `${convId}|${st.mtimeMs}|${st.size}|${totalSteps}|${title}|${lineageSig}|${context.usedTokens}|${context.contextLimit}`;
 
   return {
     found: true,
@@ -306,12 +367,7 @@ app.api(
     if (!appData) {
       return { found: false, conversationId: conv, turns: [], error: 'App data directory not found' };
     }
-    const snap = parseTranscriptTurns(appData, conv);
-    if (!snap.found) return snap;
-    if (data.etag && data.etag === snap.etag) {
-      return { found: true, conversationId: conv, unchanged: true, etag: snap.etag };
-    }
-    return snap;
+    return parseTranscriptTurns(appData, conv, String(data.etag || ''));
   },
   'GET'
 );
@@ -360,8 +416,11 @@ app.api(
           const msg = String(err?.message || '');
           const m = msg.match(/step\s+(\d+)\s+is\s+CORTEX_STEP_TYPE_(?:SYSTEM_MESSAGE|CHECKPOINT|EPHEMERAL)/i);
           if (m && attempt < 3) {
-            attemptIdx = Number(m[1]);
-            continue;
+            const nextIdx = Number(m[1]);
+            if (nextIdx > attemptIdx) {
+              attemptIdx = nextIdx;
+              continue;
+            }
           }
           throw err;
         }
@@ -372,8 +431,8 @@ app.api(
         throw new Error('ForkConversation returned no newCascadeId');
       }
 
-      const targetTitle =
-        customTitle || computeNextAutoTitle(appData, parentTitle, fres?.newProjectId || parentProjectId);
+      const targetProjectId = fres?.newProjectId || parentProjectId;
+      const targetTitle = customTitle || computeNextAutoTitle(appData, parentTitle, targetProjectId);
       let finalTitle = targetTitle;
       try {
         await lsPost(
@@ -386,6 +445,7 @@ app.api(
           10000
         );
       } catch (err) {
+        finalTitle = parentTitle;
         console.error('[fork-clone] UpdateConversationAnnotations failed:', err?.message || err);
       }
 
@@ -395,6 +455,7 @@ app.api(
           parentTitle,
           childId: newCascadeId,
           childTitle: finalTitle || parentTitle,
+          projectId: targetProjectId,
           turnNumber,
           stepIndex: fres?.forkedAtStepIndex ?? stepIndex,
           kind,
