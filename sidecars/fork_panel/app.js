@@ -473,7 +473,7 @@
         const heavyDelta = item.tokenDelta >= 25000;
         const branches = Array.isArray(item.branches) ? item.branches : [];
         const canFork = item.canForkAfter && !state.busyAction;
-        const defTitle = `${(snap.title || 'Conversation').trim()} (Fork #${item.turnNumber})`;
+        const defTitle = `${(snap.title || 'Conversation').trim().replace(/\s*\(\d+\)\s*$/, '')} (n)`;
 
         const workedHtml =
           item.toolCount > 0
@@ -632,7 +632,7 @@
   }
 
   // ---------- Actions ----------
-  async function executeFork(stepIndex, defaultSuffix, turnNumber = 0, kind = 'fork', explicitTitle = '') {
+  async function executeFork(stepIndex, turnNumber = 0, kind = 'fork', explicitTitle = '') {
     const conv = currentConvId();
     if (!conv || stepIndex < 0 || state.busyAction) return;
 
@@ -643,10 +643,9 @@
     $('clone-btn').disabled = true;
     renderTurns();
 
-    const baseTitle = (state.snap?.title || 'Conversation').trim();
-    const finalTitle = (explicitTitle || '').trim() || `${baseTitle} (${defaultSuffix})`;
-
-    showToast('', L.creating(finalTitle));
+    const customTitle = (explicitTitle || '').trim();
+    const pendingLabel = customTitle || (state.snap?.title || 'Conversation').trim();
+    showToast('', L.creating(pendingLabel));
 
     try {
       const f = window.sidecar?.fetch ? window.sidecar.fetch.bind(window.sidecar) : fetch;
@@ -658,7 +657,7 @@
           stepIndex,
           turnNumber,
           kind,
-          title: finalTitle,
+          title: customTitle,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -666,7 +665,7 @@
         throw new Error(data.error || `HTTP ${res.status}`);
       }
 
-      const createdTitle = data.title || finalTitle;
+      const createdTitle = data.title || pendingLabel;
       const shouldOpen = kind === 'clone' || $('auto-open')?.checked;
 
       state.etag = '';
@@ -746,7 +745,7 @@
 
   $('clone-btn').addEventListener('click', () => {
     if (!state.snap || state.snap.latestForkStepIndex < 0) return;
-    executeFork(state.snap.latestForkStepIndex, 'Clone', state.snap.turnCount || 0, 'clone');
+    executeFork(state.snap.latestForkStepIndex, state.snap.turnCount || 0, 'clone');
   });
 
   $('search-input').addEventListener('input', (e) => {
@@ -774,7 +773,7 @@
     const tn = Number(form.dataset.renameForm);
     const stepIdx = Number(form.dataset.forkStep);
     const customTitle = (form.querySelector('.rename-input')?.value || '').trim();
-    executeFork(stepIdx, `Fork #${tn}`, tn, 'fork', customTitle);
+    executeFork(stepIdx, tn, 'fork', customTitle);
   });
 
   document.addEventListener('click', (e) => {
@@ -789,7 +788,7 @@
       e.stopPropagation();
       const stepIdx = Number(forkBtn.dataset.forkStep);
       const tn = Number(forkBtn.dataset.forkTurn) || 0;
-      executeFork(stepIdx, `Fork #${tn}`, tn, 'fork');
+      executeFork(stepIdx, tn, 'fork');
       return;
     }
     const renameBtn = e.target.closest('[data-open-rename]');

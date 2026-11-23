@@ -147,6 +147,51 @@ function readSummaryMeta(appData, convId) {
   }
 }
 
+function stripCopySuffix(title) {
+  return String(title || '')
+    .trim()
+    .replace(/\s*\((?:\d+|Clone|Fork\s*#?\d+|Before\s*#?\d+)\)\s*$/i, '')
+    .trim();
+}
+
+function computeNextAutoTitle(appData, parentTitle, projectId) {
+  const base = stripCopySuffix(parentTitle) || 'Conversation';
+  const existing = new Set();
+
+  if (appData) {
+    const dbPath = join(appData, 'conversation_summaries.db');
+    if (existsSync(dbPath)) {
+      let db = null;
+      try {
+        db = new DatabaseSync(dbPath, { readOnly: true });
+        const rows = projectId
+          ? db.prepare('SELECT title FROM conversation_summaries WHERE project_id = ?').all(projectId)
+          : db.prepare('SELECT title FROM conversation_summaries').all();
+        for (const r of rows) {
+          if (r?.title) existing.add(String(r.title).trim().toLowerCase());
+        }
+      } catch {
+        // ignore read errors
+      } finally {
+        try {
+          db?.close();
+        } catch {}
+      }
+    }
+  }
+
+  // Also include recent titles from local lineage in case summaries DB lags by a moment
+  for (const e of readLineage().edges) {
+    if (e?.childTitle) existing.add(String(e.childTitle).trim().toLowerCase());
+  }
+
+  let n = 1;
+  while (existing.has(`${base} (${n})`.toLowerCase()) && n < 9999) {
+    n += 1;
+  }
+  return `${base} (${n})`;
+}
+
 function cleanUserText(raw) {
   const s = String(raw || '');
   const m = s.match(/<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/i);
@@ -419,6 +464,7 @@ app.api(
     const appData = findAppDataDir();
     const parentMeta = appData ? readSummaryMeta(appData, conv) : null;
     const parentTitle = (parentMeta?.title || '').trim() || 'Conversation';
+    const parentProjectId = parentMeta?.project_id || '';
 
     try {
       const fres = await lsPost('ForkConversation', {
@@ -432,24 +478,21 @@ app.api(
         throw new Error('ForkConversation returned no newCascadeId');
       }
 
-      let finalTitle = customTitle;
-      if (customTitle) {
-        try {
-          await lsPost(
-            'UpdateConversationAnnotations',
-            {
-              cascadeId: newCascadeId,
-              annotations: { title: customTitle },
-              mergeAnnotations: true,
-            },
-            10000
-          );
-        } catch (err) {
-          console.error('[fork-clone] UpdateConversationAnnotations failed:', err?.message || err);
-        }
-      } else {
-        const meta = appData ? readSummaryMeta(appData, newCascadeId) : null;
-        finalTitle = meta?.title || parentTitle;
+      const targetTitle =
+        customTitle || computeNextAutoTitle(appData, parentTitle, fres?.newProjectId || parentProjectId);
+      let finalTitle = targetTitle;
+      try {
+        await lsPost(
+          'UpdateConversationAnnotations',
+          {
+            cascadeId: newCascadeId,
+            annotations: { title: targetTitle },
+            mergeAnnotations: true,
+          },
+          10000
+        );
+      } catch (err) {
+        console.error('[fork-clone] UpdateConversationAnnotations failed:', err?.message || err);
       }
 
       if (kind !== 'clone') {
