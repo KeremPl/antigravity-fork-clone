@@ -344,14 +344,6 @@ button { cursor: pointer; }
   overflow: hidden;
   cursor: pointer;
 }
-.user-turn-tag {
-  display: inline-block;
-  font-family: var(--ag-mono);
-  font-size: 10px;
-  color: var(--ag-fg-muted);
-  margin-right: 6px;
-  user-select: none;
-}
 .user-text {
   white-space: pre-wrap;
 }

@@ -527,7 +527,7 @@
         return `
           <section class="exchange" data-turn-node="${item.turnNumber}">
             <div class="user-row">
-              <div class="user-bubble${longUser && !userExpanded ? ' clamped' : ''}" data-toggle-user="${item.turnNumber}"><span class="user-turn-tag">#${item.turnNumber}</span><span class="user-text">${esc(userText)}</span></div>
+              <div class="user-bubble${longUser && !userExpanded ? ' clamped' : ''}" data-toggle-user="${item.turnNumber}"><span class="user-text">${esc(userText)}</span></div>
             </div>
 
             <div class="ai-block">
