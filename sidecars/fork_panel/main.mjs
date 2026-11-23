@@ -19,6 +19,7 @@ import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { Response, SidecarApp } from 'sidecar_sdk';
+import { computeNextAutoTitleFromSet, parseTranscriptLines } from './core.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ID_RE = /^[0-9a-f-]{8,}$/i;
@@ -148,7 +149,6 @@ function readSummaryMeta(appData, convId) {
 }
 
 function computeNextAutoTitle(appData, parentTitle, projectId) {
-  const base = String(parentTitle || '').trim() || 'Conversation';
   const existing = new Set();
 
   if (appData) {
@@ -178,29 +178,7 @@ function computeNextAutoTitle(appData, parentTitle, projectId) {
     if (e?.childTitle) existing.add(String(e.childTitle).trim().toLowerCase());
   }
 
-  let n = 1;
-  while (existing.has(`${base} (${n})`.toLowerCase()) && n < 9999) {
-    n += 1;
-  }
-  return `${base} (${n})`;
-}
-
-function cleanUserText(raw) {
-  const s = String(raw || '');
-  const m = s.match(/<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/i);
-  return (m ? m[1] : s)
-    .replace(/<ADDITIONAL_METADATA>[\s\S]*?<\/ADDITIONAL_METADATA>/gi, '')
-    .replace(/<USER_SETTINGS_CHANGE>[\s\S]*?<\/USER_SETTINGS_CHANGE>/gi, '')
-    .trim();
-}
-
-function cleanPreview(text, maxLen = 200) {
-  const oneLine = String(text || '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (oneLine.length <= maxLen) return oneLine;
-  return `${oneLine.slice(0, maxLen - 1)}…`;
+  return computeNextAutoTitleFromSet(parentTitle, existing);
 }
 
 function parseTranscriptTurns(appData, convId) {
@@ -219,138 +197,18 @@ function parseTranscriptTurns(appData, convId) {
   const raw = readFileSync(logPath, 'utf-8');
   const lines = raw.split(/\r?\n/);
 
-  // transcript.jsonl is append-only; if the user edits/rewinds a message,
-  // Antigravity appends a new USER_INPUT with an already-seen step_index.
-  // Truncate stale steps >= idx only on a rewound USER_INPUT so out-of-order
-  // parallel tool completions never wipe sibling steps.
-  const stepMap = new Map();
-  for (const line of lines) {
-    if (!line || line[0] !== '{') continue;
-    let obj;
-    try {
-      obj = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const idx = Number(obj.step_index);
-    if (!Number.isFinite(idx)) continue;
-    const isUser = obj.source === 'USER_EXPLICIT' && obj.type === 'USER_INPUT';
-    if (isUser && stepMap.has(idx)) {
-      for (const k of [...stepMap.keys()]) {
-        if (k >= idx) stepMap.delete(k);
-      }
-    }
-    stepMap.set(idx, obj);
-  }
-
-  const orderedSteps = [...stepMap.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([, v]) => v);
-
-  const turns = [];
-  let current = null;
-  let maxStepIndex = -1;
-  let latestCompletedNonUserStep = -1;
-  let lastStepIsUser = false;
-
-  for (const obj of orderedSteps) {
-    const idx = Number(obj.step_index);
-    if (idx > maxStepIndex) maxStepIndex = idx;
-
-    const isUser = obj.source === 'USER_EXPLICIT' && obj.type === 'USER_INPUT';
-    const isDone = obj.status === 'DONE' || obj.status === 'ERROR' || !obj.status;
-
-    if (isUser) {
-      lastStepIsUser = true;
-      const userText = cleanUserText(obj.content);
-      const hasMedia = Array.isArray(obj.media) && obj.media.length > 0;
-      current = {
-        turnNumber: turns.length + 1,
-        userStepIndex: idx,
-        endStepIndex: -1,
-        forkBeforeStepIndex: -1,
-        createdAt: obj.created_at || '',
-        userPreview: cleanPreview(userText || (hasMedia ? '[Image / Attachment]' : '(empty message)'), 220),
-        userFull: userText.slice(0, 8000),
-        hasMedia,
-        replyPreview: '',
-        replyFull: '',
-        toolCount: 0,
-        toolNames: [],
-        promptTokens: 0,
-        tokenDelta: 0,
-        model: '',
-        inProgress: false,
-      };
-      turns.push(current);
-      continue;
-    }
-
-    lastStepIsUser = false;
-    if (!current) continue;
-
-    if (obj.status === 'RUNNING' || obj.status === 'PENDING') {
-      current.inProgress = true;
-    }
-
-    if (isDone) {
-      current.endStepIndex = idx;
-      if (idx > latestCompletedNonUserStep) latestCompletedNonUserStep = idx;
-    }
-
-    if (obj.type === 'PLANNER_RESPONSE') {
-      if (obj.model) current.model = String(obj.model);
-      const inTok = Number(obj.input_tokens) || 0;
-      const cacheTok = Number(obj.cache_read_tokens) || 0;
-      if (inTok + cacheTok > 0) current.promptTokens = inTok + cacheTok;
-      if (Array.isArray(obj.tool_calls)) {
-        current.toolCount += obj.tool_calls.length;
-        for (const tc of obj.tool_calls) {
-          const nm = String(tc?.name || '').trim();
-          if (nm && !current.toolNames.includes(nm) && current.toolNames.length < 12) {
-            current.toolNames.push(nm);
-          }
-        }
-      }
-      if (typeof obj.content === 'string' && obj.content.trim()) {
-        current.replyPreview = cleanPreview(obj.content, 180);
-        current.replyFull = obj.content.trim().slice(0, 8000);
-        if (obj.created_at) current.replyAt = obj.created_at;
-      }
-    }
-  }
-
-  // Attach lineage (parent breadcrumb + child branches per step)
   const lineage = readLineage();
   const parentEdge = lineage.edges.find((e) => e.childId === convId) || null;
   const childEdges = lineage.edges.filter((e) => e.parentId === convId);
 
-  let prevCompletedEnd = -1;
-  let prevTokens = 0;
-  for (const t of turns) {
-    t.forkBeforeStepIndex = prevCompletedEnd;
-    t.canForkAfter = t.endStepIndex > t.userStepIndex;
-    t.canForkBefore = t.forkBeforeStepIndex >= 0;
-    if (t.promptTokens > 0) {
-      t.tokenDelta = prevTokens > 0 ? Math.max(0, t.promptTokens - prevTokens) : 0;
-      prevTokens = t.promptTokens;
-    }
-    t.branches = childEdges
-      .filter((e) => e.stepIndex === t.endStepIndex || e.turnNumber === t.turnNumber)
-      .map((e) => ({
-        childId: e.childId,
-        title: e.childTitle || 'Fork',
-        createdAt: e.createdAt || '',
-        kind: e.kind || 'fork',
-      }));
-    if (t.canForkAfter) {
-      prevCompletedEnd = t.endStepIndex;
-    }
-  }
-
   const summary = readSummaryMeta(appData, convId);
+  const { turns, totalSteps, latestCompletedNonUserStep, busy } = parseTranscriptLines(
+    lines,
+    childEdges,
+    Number(summary?.step_count) || 0
+  );
+
   const title = (summary?.title || '').trim();
-  const totalSteps = Math.max(maxStepIndex + 1, Number(summary?.step_count) || 0);
   const lineageSig = `${parentEdge?.parentId || ''}:${childEdges.length}`;
   const etag = `${convId}|${st.mtimeMs}|${st.size}|${totalSteps}|${title}|${lineageSig}`;
 
@@ -362,7 +220,7 @@ function parseTranscriptTurns(appData, convId) {
     totalSteps,
     turnCount: turns.length,
     latestForkStepIndex: latestCompletedNonUserStep,
-    busy: lastStepIsUser || (turns.length > 0 && turns[turns.length - 1].inProgress),
+    busy,
     parent: parentEdge
       ? {
           parentId: parentEdge.parentId,
@@ -460,11 +318,28 @@ app.api(
     const parentProjectId = parentMeta?.project_id || '';
 
     try {
-      const fres = await lsPost('ForkConversation', {
-        sourceCascadeId: conv,
-        forkAtStepIndex: stepIndex,
-        targetForkWorkspace: 1, // FORK_TARGET_CURRENT_WORKSPACE
-      });
+      // Retry stepping past hidden non-user steps (e.g. CORTEX_STEP_TYPE_SYSTEM_MESSAGE /
+      // Conversation Forked markers omitted from transcript.jsonl) if needed.
+      let attemptIdx = stepIndex;
+      let fres = null;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          fres = await lsPost('ForkConversation', {
+            sourceCascadeId: conv,
+            forkAtStepIndex: attemptIdx,
+            targetForkWorkspace: 1, // FORK_TARGET_CURRENT_WORKSPACE
+          });
+          break;
+        } catch (err) {
+          const msg = String(err?.message || '');
+          const m = msg.match(/step\s+(\d+)\s+is\s+CORTEX_STEP_TYPE_(?:SYSTEM_MESSAGE|CHECKPOINT|EPHEMERAL)/i);
+          if (m && attempt < 3) {
+            attemptIdx = Number(m[1]);
+            continue;
+          }
+          throw err;
+        }
+      }
 
       const newCascadeId = String(fres?.newCascadeId || '').trim();
       if (!newCascadeId) {

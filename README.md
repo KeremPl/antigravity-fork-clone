@@ -91,6 +91,14 @@ sidecars/fork_panel/
 
 ---
 
+## Testing
+
+Run the zero-dependency unit test suite:
+
+```bash
+node --test
+```
+
 ## Platform Status & Contributing
 
 - **Tested on:** Windows 11 + Antigravity Desktop `v2.34.0`
