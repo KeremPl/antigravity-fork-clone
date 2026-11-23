@@ -232,7 +232,7 @@ function parseTranscriptTurns(appData, convId) {
         endStepIndex: -1,
         forkBeforeStepIndex: -1,
         createdAt: obj.created_at || '',
-        userPreview: cleanPreview(userText || (hasMedia ? '[Görsel / Ek]' : '(boş mesaj)'), 220),
+        userPreview: cleanPreview(userText || (hasMedia ? '[Image / Attachment]' : '(empty message)'), 220),
         userFull: userText.slice(0, 4000),
         hasMedia,
         replyPreview: '',

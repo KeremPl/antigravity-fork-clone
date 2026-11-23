@@ -2,7 +2,7 @@
   "name": "fork-clone",
   "displayName": "Fork & Clone",
   "description": "Native message-level conversation forking and instant cloning inside Antigravity Desktop using Google's built-in ForkConversation engine.",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "logo": "assets/logo.svg",
   "suggestedPrompts": [
     "Open the Fork & Clone panel for this conversation",
