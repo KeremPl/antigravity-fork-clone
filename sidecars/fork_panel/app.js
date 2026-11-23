@@ -317,6 +317,13 @@
     window.sidecar?.ui?.toggleConversation?.(convId);
   }
 
+  function hideToast() {
+    const el = $('toast');
+    if (!el) return;
+    el.className = 'toast hidden';
+    el.innerHTML = '';
+  }
+
   function showToast(kind, text, openId = '') {
     const el = $('toast');
     if (!el) return;
@@ -325,6 +332,12 @@
       <span class="toast-text">${esc(text)}</span>
       ${openId ? `<button type="button" class="ghost-btn" data-open-conv="${esc(openId)}">${esc(t().open)}</button>` : ''}
     `;
+  }
+
+  function closePanel() {
+    try {
+      window.sidecar?.ui?.toggleAuxPane?.({ open: false });
+    } catch {}
   }
 
   function scrollToLatest(smooth = true) {
@@ -369,7 +382,7 @@
     const el = $('parent-crumb');
     if (!el) return;
     const p = snap?.parent;
-    if (!p || !p.parentId) {
+    if (!p || !p.parentId || p.kind === 'clone') {
       el.classList.add('hidden');
       return;
     }
@@ -514,9 +527,7 @@
         return `
           <section class="exchange" data-turn-node="${item.turnNumber}">
             <div class="user-row">
-              <div class="user-bubble${longUser && !userExpanded ? ' clamped' : ''}" data-toggle-user="${item.turnNumber}">
-                <span class="user-turn-tag">#${item.turnNumber}</span>${esc(userText)}
-              </div>
+              <div class="user-bubble${longUser && !userExpanded ? ' clamped' : ''}" data-toggle-user="${item.turnNumber}"><span class="user-turn-tag">#${item.turnNumber}</span><span class="user-text">${esc(userText)}</span></div>
             </div>
 
             <div class="ai-block">
@@ -599,6 +610,10 @@
     renderTurns();
 
     const switchedConv = prevConv && prevConv !== snap.conversationId;
+    if (switchedConv) {
+      hideToast();
+      state.renamingTurn = null;
+    }
     const addedTurn = snap.turnCount > prevTurnCount;
     if (!state.didInitialScroll || switchedConv) {
       state.didInitialScroll = true;
@@ -652,13 +667,19 @@
       }
 
       const createdTitle = data.title || finalTitle;
-      showToast('ok', L.created(createdTitle), data.newCascadeId);
+      const shouldOpen = kind === 'clone' || $('auto-open')?.checked;
 
       state.etag = '';
       await poll(true);
 
-      if ($('auto-open')?.checked) {
+      if (shouldOpen) {
+        hideToast();
         openConversation(data.newCascadeId);
+        if (kind === 'clone') {
+          setTimeout(closePanel, 120);
+        }
+      } else {
+        showToast('ok', L.created(createdTitle), data.newCascadeId);
       }
     } catch (err) {
       showToast('err', L.forkError(err?.message || err));

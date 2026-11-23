@@ -452,16 +452,18 @@ app.api(
         finalTitle = meta?.title || parentTitle;
       }
 
-      appendLineageEdge({
-        parentId: conv,
-        parentTitle,
-        childId: newCascadeId,
-        childTitle: finalTitle || parentTitle,
-        turnNumber,
-        stepIndex: fres?.forkedAtStepIndex ?? stepIndex,
-        kind,
-        createdAt: new Date().toISOString(),
-      });
+      if (kind !== 'clone') {
+        appendLineageEdge({
+          parentId: conv,
+          parentTitle,
+          childId: newCascadeId,
+          childTitle: finalTitle || parentTitle,
+          turnNumber,
+          stepIndex: fres?.forkedAtStepIndex ?? stepIndex,
+          kind,
+          createdAt: new Date().toISOString(),
+        });
+      }
 
       return {
         ok: true,
