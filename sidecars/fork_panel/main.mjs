@@ -19,7 +19,11 @@ import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { Response, SidecarApp } from 'sidecar_sdk';
-import { computeNextAutoTitleFromSet, parseTranscriptLines } from './core.mjs';
+import {
+  computeNextAutoTitleFromSet,
+  extractExecutorContextLimit,
+  parseTranscriptLines,
+} from './core.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ID_RE = /^[0-9a-f-]{8,}$/i;
@@ -181,6 +185,25 @@ function computeNextAutoTitle(appData, parentTitle, projectId) {
   return computeNextAutoTitleFromSet(parentTitle, existing);
 }
 
+function readExecutorLimit(appData, convId) {
+  const dbPath = join(appData, 'conversations', `${convId}.db`);
+  if (!existsSync(dbPath)) return 0;
+  let db = null;
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true });
+    const row = db
+      .prepare('SELECT data FROM executor_metadata ORDER BY rowid DESC LIMIT 1')
+      .get();
+    return row?.data instanceof Uint8Array ? extractExecutorContextLimit(row.data) : 0;
+  } catch {
+    return 0;
+  } finally {
+    try {
+      db?.close();
+    } catch {}
+  }
+}
+
 function parseTranscriptTurns(appData, convId) {
   const logPath = join(appData, 'brain', convId, '.system_generated', 'logs', 'transcript.jsonl');
   if (!existsSync(logPath)) {
@@ -202,15 +225,17 @@ function parseTranscriptTurns(appData, convId) {
   const childEdges = lineage.edges.filter((e) => e.parentId === convId);
 
   const summary = readSummaryMeta(appData, convId);
-  const { turns, totalSteps, latestCompletedNonUserStep, busy } = parseTranscriptLines(
+  const executorLimit = readExecutorLimit(appData, convId);
+  const { turns, totalSteps, latestCompletedNonUserStep, busy, context } = parseTranscriptLines(
     lines,
     childEdges,
-    Number(summary?.step_count) || 0
+    Number(summary?.step_count) || 0,
+    executorLimit
   );
 
   const title = (summary?.title || '').trim();
   const lineageSig = `${parentEdge?.parentId || ''}:${childEdges.length}`;
-  const etag = `${convId}|${st.mtimeMs}|${st.size}|${totalSteps}|${title}|${lineageSig}`;
+  const etag = `${convId}|${st.mtimeMs}|${st.size}|${totalSteps}|${title}|${lineageSig}|${context.usedTokens}|${context.contextLimit}`;
 
   return {
     found: true,
@@ -221,6 +246,7 @@ function parseTranscriptTurns(appData, convId) {
     turnCount: turns.length,
     latestForkStepIndex: latestCompletedNonUserStep,
     busy,
+    context,
     parent: parentEdge
       ? {
           parentId: parentEdge.parentId,

@@ -4,7 +4,9 @@ import {
   cleanPreview,
   cleanUserText,
   computeNextAutoTitleFromSet,
+  extractExecutorContextLimit,
   parseTranscriptLines,
+  resolveFallbackContextLimit,
 } from '../sidecars/fork_panel/core.mjs';
 
 describe('cleanUserText & cleanPreview', () => {
@@ -140,5 +142,88 @@ describe('computeNextAutoTitleFromSet (hierarchical chaining)', () => {
   it('handles case-insensitive collisions and blank parent titles', () => {
     const existing = new Set(['conversation (1)']);
     assert.equal(computeNextAutoTitleFromSet('', existing), 'Conversation (2)');
+  });
+});
+
+function encodeVarint(n) {
+  const bytes = [];
+  let v = BigInt(n);
+  while (v >= 0x80n) {
+    bytes.push(Number((v & 0x7fn) | 0x80n));
+    v >>= 7n;
+  }
+  bytes.push(Number(v));
+  return bytes;
+}
+
+function encodeLengthDelimited(fieldNum, payload) {
+  return [...encodeVarint((fieldNum << 3) | 2), ...encodeVarint(payload.length), ...payload];
+}
+
+describe('context window tracking & protobuf limit decoder', () => {
+  it('extracts Antigravity compaction limit from executor_metadata protobuf (field 10 -> 2 -> 5)', () => {
+    const field5 = [...encodeVarint((5 << 3) | 0), ...encodeVarint(512000)];
+    const field2 = encodeLengthDelimited(2, field5);
+    const field10 = encodeLengthDelimited(10, field2);
+    assert.equal(extractExecutorContextLimit(new Uint8Array(field10)), 512000);
+    assert.equal(extractExecutorContextLimit(new Uint8Array([])), 0);
+  });
+
+  it('resolves model fallback limits cleanly', () => {
+    assert.equal(resolveFallbackContextLimit('gpt-oss-120b'), 131072);
+    assert.equal(resolveFallbackContextLimit('model-orchestrator'), 512000);
+    assert.equal(resolveFallbackContextLimit('gemini-4-neon-high'), 256000);
+  });
+
+  it('computes exact context tokens, percent, cache hit ratio, and trailing estimates', () => {
+    const lines = [
+      JSON.stringify({ step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', status: 'DONE', content: 'Hi' }),
+      JSON.stringify({
+        step_index: 1,
+        source: 'MODEL',
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        model: 'claude-opus-5-5-high',
+        input_tokens: 10000,
+        cache_read_tokens: 90000,
+        output_tokens: 2000,
+        content: 'Done',
+      }),
+    ];
+    const res = parseTranscriptLines(lines, [], 0, 840000);
+    assert.equal(res.context.usedTokens, 102000);
+    assert.equal(res.context.contextLimit, 840000);
+    assert.equal(res.context.freeTokens, 738000);
+    assert.equal(res.context.usedPercent, 12.1);
+    assert.equal(res.context.remainingPercent, 87.9);
+    assert.equal(res.context.cacheHitRatio, 90);
+    assert.equal(res.context.model, 'claude-opus-5-5-high');
+  });
+
+  it('uses CHECKPOINT summary instead of stale pre-compaction tokens right after compaction', () => {
+    const lines = [
+      JSON.stringify({ step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', status: 'DONE', content: 'Long chat' }),
+      JSON.stringify({
+        step_index: 1,
+        source: 'MODEL',
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        model: 'gemini-4-neon-high',
+        input_tokens: 50000,
+        cache_read_tokens: 400000,
+        output_tokens: 5000,
+        content: 'Old reply',
+      }),
+      JSON.stringify({
+        step_index: 2,
+        source: 'SYSTEM',
+        type: 'CHECKPOINT',
+        status: 'DONE',
+        output_tokens: 12000,
+      }),
+    ];
+    const res = parseTranscriptLines(lines, [], 0, 512000);
+    assert.equal(res.context.usedTokens, 12000);
+    assert.equal(res.context.usedPercent, 2.3);
   });
 });

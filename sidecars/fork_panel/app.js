@@ -55,6 +55,10 @@
       minsAgo: (m) => `${m}m ago`,
       hoursAgo: (h) => `${h}h ago`,
       daysAgo: (d) => `${d}d ago`,
+      ctxLabel: 'Context window:',
+      ctxPct: (used, left) => `${used}% used (${left}% left)`,
+      ctxTok: (used, limit) => `${used} / ${limit} tokens used`,
+      ctxCache: (pct) => `Cache ${pct}%`,
     },
     tr: {
       chat: 'Sohbet',
@@ -94,6 +98,10 @@
       minsAgo: (m) => `${m}dk önce`,
       hoursAgo: (h) => `${h}s önce`,
       daysAgo: (d) => `${d}g önce`,
+      ctxLabel: 'Bağlam penceresi:',
+      ctxPct: (used, left) => `%${used} kullanıldı (%${left} kaldı)`,
+      ctxTok: (used, limit) => `${used} / ${limit} token kullanıldı`,
+      ctxCache: (pct) => `Cache %${pct}`,
     },
   };
 
@@ -378,6 +386,79 @@
   const CHEV_ICON =
     '<svg class="worked-chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg>';
 
+  function formatModelLabel(slug) {
+    const raw = String(slug || '').trim();
+    if (!raw) return '';
+    // Format slugs like "gemini-4-neon-high" -> "Gemini 4 Neon (High)", "claude-opus-5-5-high" -> "Claude Opus 5.5 (High)"
+    const parts = raw.split('-').filter(Boolean);
+    const tiers = new Set(['low', 'medium', 'high', 'max', 'thinking']);
+    let tier = '';
+    if (parts.length > 1 && tiers.has(parts[parts.length - 1].toLowerCase())) {
+      const tWord = parts.pop();
+      tier = tWord.charAt(0).toUpperCase() + tWord.slice(1).toLowerCase();
+    }
+    const merged = [];
+    for (let i = 0; i < parts.length; i++) {
+      const cur = parts[i];
+      if (/^\d+$/.test(cur) && i + 1 < parts.length && /^\d+$/.test(parts[i + 1])) {
+        merged.push(`${cur}.${parts[i + 1]}`);
+        i += 1;
+      } else if (/^gpt$/i.test(cur)) {
+        merged.push('GPT');
+      } else if (/^oss$/i.test(cur)) {
+        merged.push('OSS');
+      } else {
+        merged.push(cur.charAt(0).toUpperCase() + cur.slice(1));
+      }
+    }
+    const base = merged.join(' ');
+    return tier ? `${base} (${tier})` : base;
+  }
+
+  function renderContextRing(snap) {
+    const wrap = $('ctx-ring-wrap');
+    const arc = $('ctx-ring-arc');
+    if (!wrap || !arc) return;
+    const ctx = snap?.context;
+    if (!ctx || !ctx.contextLimit || !ctx.usedTokens) {
+      wrap.classList.add('hidden');
+      return;
+    }
+
+    wrap.classList.remove('hidden');
+    const pct = Math.max(0, Math.min(100, Number(ctx.usedPercent) || 0));
+    const usedRound = Math.round(pct);
+    const leftPct = Math.max(0, 100 - usedRound);
+
+    const circumference = 2 * Math.PI * 7.5; // 47.1239
+    const visibleFrac = pct > 0 ? Math.max(0.03, pct / 100) : 0;
+    arc.style.strokeDasharray = circumference.toFixed(2);
+    arc.style.strokeDashoffset = (circumference * (1 - visibleFrac)).toFixed(2);
+    arc.classList.toggle('mid', pct >= 60 && pct < 85);
+    arc.classList.toggle('high', pct >= 85);
+
+    const L = t();
+    const locale = state.lang === 'tr' ? 'tr-TR' : 'en-US';
+    const usedFmt = Number(ctx.usedTokens).toLocaleString(locale);
+    const limitFmt = Number(ctx.contextLimit).toLocaleString(locale);
+
+    $('ctx-pop-label').textContent = L.ctxLabel;
+    $('ctx-pop-pct').textContent = L.ctxPct(usedRound, leftPct);
+    $('ctx-pop-tok').textContent = L.ctxTok(usedFmt, limitFmt);
+
+    const subParts = [];
+    if (ctx.cacheHitRatio > 0) subParts.push(L.ctxCache(ctx.cacheHitRatio));
+    const modelLabel = formatModelLabel(ctx.model);
+    if (modelLabel) subParts.push(modelLabel);
+    const subEl = $('ctx-pop-sub');
+    if (subParts.length) {
+      subEl.textContent = subParts.join(' · ');
+      subEl.classList.remove('hidden');
+    } else {
+      subEl.classList.add('hidden');
+    }
+  }
+
   function renderParentCrumb(snap) {
     const el = $('parent-crumb');
     if (!el) return;
@@ -601,6 +682,7 @@
     $('panel').classList.remove('hidden');
 
     renderParentCrumb(snap);
+    renderContextRing(snap);
     $('conv-title').textContent = snap.title || 'Untitled conversation';
     $('conv-title').title = `${snap.title || ''} (${snap.conversationId})`;
     $('conv-meta').textContent = t().turnsMeta(snap.turnCount, snap.totalSteps);

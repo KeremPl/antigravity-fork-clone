@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:ROND,opsz,slnt,wdth,wght@0..100,6..144,-10..0,92..100,100..1000&family=Google+Sans+Code:ital,wght@0,300..800;1,300..800&display=swap">
-  <link rel="stylesheet" href="/styles.css?v=3.0.2">
+  <link rel="stylesheet" href="/styles.css?v=3.1.0">
 </head>
 <body>
   <div id="loading" class="loading" aria-live="polite">
@@ -30,6 +30,18 @@
           <div id="conv-meta" class="conv-meta num">0 turns</div>
         </div>
         <div class="head-actions">
+          <div id="ctx-ring-wrap" class="ctx-ring-wrap hidden" tabindex="0" aria-label="Context window usage">
+            <svg class="ctx-ring-svg" width="18" height="18" viewBox="0 0 20 20" aria-hidden="true">
+              <circle class="ctx-ring-track" cx="10" cy="10" r="7.5" fill="none" stroke-width="2.4"/>
+              <circle id="ctx-ring-arc" class="ctx-ring-arc" cx="10" cy="10" r="7.5" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="47.12" stroke-dashoffset="47.12"/>
+            </svg>
+            <div id="ctx-popover" class="ctx-popover" role="tooltip">
+              <div id="ctx-pop-label" class="ctx-pop-label">Context window:</div>
+              <div id="ctx-pop-pct" class="ctx-pop-pct num">0% used (100% left)</div>
+              <div id="ctx-pop-tok" class="ctx-pop-tok num">0 / 256,000 tokens used</div>
+              <div id="ctx-pop-sub" class="ctx-pop-sub num hidden"></div>
+            </div>
+          </div>
           <div class="segmented" role="group" aria-label="View density">
             <button type="button" id="mode-chat" class="seg-btn on" data-mode="chat">Chat</button>
             <button type="button" id="mode-compact" class="seg-btn" data-mode="compact">Compact</button>
@@ -87,6 +99,6 @@
     </div>
   </section>
 
-  <script src="/app.js?v=3.0.3"></script>
+  <script src="/app.js?v=3.1.0"></script>
 </body>
 </html>

@@ -27,7 +27,75 @@ export function cleanPreview(text, maxLen = 200) {
  * - Preserves out-of-order parallel tool completions (non-user steps overwrite by idx)
  * - Guarantees every forkable endStepIndex is a completed non-USER_INPUT step.
  */
-export function parseTranscriptLines(lines, childEdges = [], summaryStepCount = 0) {
+export function decodeProtoFields(buf, start = 0, end = buf.length) {
+  const fields = new Map();
+  let pos = start;
+  const readVarint = () => {
+    let val = 0n;
+    let shift = 0n;
+    while (pos < end && shift < 70n) {
+      const b = buf[pos++];
+      val |= BigInt(b & 0x7f) << shift;
+      if ((b & 0x80) === 0) return val;
+      shift += 7n;
+    }
+    return val;
+  };
+  while (pos < end) {
+    const tag = Number(readVarint());
+    const fieldNum = tag >>> 3;
+    const wire = tag & 7;
+    if (!fieldNum) break;
+    let val;
+    if (wire === 0) {
+      val = Number(readVarint());
+    } else if (wire === 1) {
+      pos += 8;
+      continue;
+    } else if (wire === 2) {
+      const len = Number(readVarint());
+      if (len < 0 || pos + len > end) break;
+      val = buf.subarray(pos, pos + len);
+      pos += len;
+    } else if (wire === 5) {
+      pos += 4;
+      continue;
+    } else {
+      break;
+    }
+    if (!fields.has(fieldNum)) fields.set(fieldNum, []);
+    fields.get(fieldNum).push(val);
+  }
+  return fields;
+}
+
+/**
+ * Extracts Antigravity's exact per-conversation compaction token cap
+ * (executor_metadata.data -> field 10 -> field 2 -> field 5).
+ */
+export function extractExecutorContextLimit(buf) {
+  if (!(buf instanceof Uint8Array) || buf.length === 0) return 0;
+  try {
+    const root = decodeProtoFields(buf);
+    const f10 = root.get(10)?.[0];
+    if (!(f10 instanceof Uint8Array)) return 0;
+    const f2 = decodeProtoFields(f10).get(2)?.[0];
+    if (!(f2 instanceof Uint8Array)) return 0;
+    const f5 = decodeProtoFields(f2).get(5)?.[0];
+    return typeof f5 === 'number' && Number.isFinite(f5) && f5 > 0 ? f5 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function resolveFallbackContextLimit(rawModel) {
+  const m = String(rawModel || '').toLowerCase();
+  if (/gpt-oss-120b/.test(m)) return 131072;
+  if (/orchestrator/.test(m)) return 512000;
+  return 256000;
+}
+
+export function parseTranscriptLines(lines, childEdges = [], summaryStepCount = 0, executorLimit = 0) {
   const stepMap = new Map();
   for (const line of lines) {
     if (!line || line[0] !== '{') continue;
@@ -57,8 +125,13 @@ export function parseTranscriptLines(lines, childEdges = [], summaryStepCount = 
   let maxStepIndex = -1;
   let latestCompletedNonUserStep = -1;
   let lastStepIsUser = false;
+  let lastPlannerOrderIdx = -1;
+  let lastPlannerObj = null;
+  let lastCheckpointOrderIdx = -1;
+  let lastCheckpointObj = null;
 
-  for (const obj of orderedSteps) {
+  for (let orderIdx = 0; orderIdx < orderedSteps.length; orderIdx++) {
+    const obj = orderedSteps[orderIdx];
     const idx = Number(obj.step_index);
     if (idx > maxStepIndex) maxStepIndex = idx;
 
@@ -104,11 +177,20 @@ export function parseTranscriptLines(lines, childEdges = [], summaryStepCount = 
       if (idx > latestCompletedNonUserStep) latestCompletedNonUserStep = idx;
     }
 
+    if (obj.type === 'CHECKPOINT') {
+      lastCheckpointOrderIdx = orderIdx;
+      lastCheckpointObj = obj;
+    }
+
     if (obj.type === 'PLANNER_RESPONSE') {
       if (obj.model) current.model = String(obj.model);
       const inTok = Number(obj.input_tokens) || 0;
       const cacheTok = Number(obj.cache_read_tokens) || 0;
-      if (inTok + cacheTok > 0) current.promptTokens = inTok + cacheTok;
+      if (inTok + cacheTok > 0) {
+        current.promptTokens = inTok + cacheTok;
+        lastPlannerOrderIdx = orderIdx;
+        lastPlannerObj = obj;
+      }
       if (Array.isArray(obj.tool_calls)) {
         current.toolCount += obj.tool_calls.length;
         for (const tc of obj.tool_calls) {
@@ -172,12 +254,66 @@ export function parseTranscriptLines(lines, childEdges = [], summaryStepCount = 
     }
   }
 
+  // Compute exact context window usage from latest PLANNER_RESPONSE (+ trailing uncounted steps)
+  const estimateStepTok = (s) => {
+    const textLen =
+      String(s?.content || '').length +
+      String(s?.thinking || '').length +
+      (Array.isArray(s?.tool_calls) ? JSON.stringify(s.tool_calls).length : 0);
+    return Math.ceil(textLen / 4);
+  };
+
+  let usedTokens = 0;
+  let cachedTokens = 0;
+  let lastPromptTokens = 0;
+  let activeModel = lastPlannerObj ? String(lastPlannerObj.model || '') : '';
+  if (lastCheckpointOrderIdx > lastPlannerOrderIdx && lastCheckpointObj) {
+    // Just compacted and waiting for next PLANNER_RESPONSE: avoid stale pre-compaction count
+    const summaryTok =
+      Number(lastCheckpointObj.output_tokens) > 0
+        ? Number(lastCheckpointObj.output_tokens)
+        : estimateStepTok(lastCheckpointObj);
+    let trailingTokens = 0;
+    for (let j = lastCheckpointOrderIdx + 1; j < orderedSteps.length; j++) {
+      trailingTokens += estimateStepTok(orderedSteps[j]);
+    }
+    usedTokens = summaryTok + trailingTokens;
+  } else if (lastPlannerObj) {
+    const inTok = Number(lastPlannerObj.input_tokens) || 0;
+    const cacheTok = Number(lastPlannerObj.cache_read_tokens) || 0;
+    const outTok = Number(lastPlannerObj.output_tokens) || 0;
+    lastPromptTokens = inTok + cacheTok;
+    cachedTokens = cacheTok;
+
+    let trailingTokens = 0;
+    for (let j = lastPlannerOrderIdx + 1; j < orderedSteps.length; j++) {
+      trailingTokens += estimateStepTok(orderedSteps[j]);
+    }
+    usedTokens = lastPromptTokens + outTok + trailingTokens;
+  }
+
+  const contextLimit =
+    Number(executorLimit) > 0 ? Number(executorLimit) : resolveFallbackContextLimit(activeModel);
+  const freeTokens = Math.max(0, contextLimit - usedTokens);
+  const usedPercent = contextLimit > 0 ? Math.min(100, (usedTokens / contextLimit) * 100) : 0;
+  const cacheHitRatio =
+    lastPromptTokens > 0 ? Math.round((cachedTokens / lastPromptTokens) * 1000) / 10 : 0;
+
   return {
     turns,
     maxStepIndex,
     totalSteps,
     latestCompletedNonUserStep,
     busy: isBusy,
+    context: {
+      usedTokens,
+      contextLimit,
+      freeTokens,
+      usedPercent: Number(usedPercent.toFixed(1)),
+      remainingPercent: Number(Math.max(0, 100 - usedPercent).toFixed(1)),
+      cacheHitRatio,
+      model: activeModel,
+    },
   };
 }
 

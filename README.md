@@ -34,6 +34,7 @@ Interestingly, Antigravity Desktop's local Language Server **already implements 
 - **Live Cut-Line Hover Preview**: Hovering **`⑂ Fork`** draws a horizontal dashed cut line right beneath that AI response and dims all subsequent turns.
 - **Chat | Compact Switcher**: Switch between full readable chat mode and a high-density overview map for 80+ turn sessions (clicking any compact row jumps right to it in Chat view).
 - **One-Click Full Clone**: Duplicate the entire conversation from its latest completed reply with one click.
+- **Live Context Window Ring (Codex-Style)**: Compact circular progress ring in the header showing exact context window utilization (reading Antigravity's per-conversation compaction limit read-only from `executor_metadata` + latest `PLANNER_RESPONSE` token counts). Hover to see `% used (% left)`, exact `used / limit tokens`, prompt cache hit ratio, and active model.
 - **Parent ↔ Child Branch Navigation**: Tracks local fork lineage in the sidecar's isolated `lineage.json` so branched chats appear as clickable branch chips right under the AI response they forked from, and child chats display a `↖ Forked from #K` breadcrumb to jump back to the parent.
 - **Built-in EN / TR Language Toggle**: Switch instantly between English and Turkish (`EN` / `TR` button in the header).
 - **`/fork` Slash Command**: Includes a companion `skills/fork/SKILL.md` to open the panel directly from chat.

@@ -161,6 +161,87 @@ button { cursor: pointer; }
   flex-shrink: 0;
 }
 
+/* Codex-style circular context ring + hover popover */
+.ctx-ring-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  cursor: default;
+  outline: none;
+  transition: background-color 140ms ease;
+}
+.ctx-ring-wrap:hover,
+.ctx-ring-wrap:focus-visible {
+  background: var(--ag-hover);
+}
+.ctx-ring-svg {
+  transform: rotate(-90deg);
+  display: block;
+}
+.ctx-ring-track {
+  stroke: color-mix(in srgb, var(--ag-fg) 20%, transparent);
+}
+.ctx-ring-arc {
+  stroke: color-mix(in srgb, var(--ag-fg) 88%, transparent);
+  transition: stroke-dashoffset 280ms ease, stroke 200ms ease;
+}
+.ctx-ring-arc.mid { stroke: #f59e0b; }
+.ctx-ring-arc.high { stroke: #ef4444; }
+
+.ctx-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  width: max-content;
+  min-width: 196px;
+  max-width: 260px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--ag-card);
+  border: 1px solid color-mix(in srgb, var(--ag-fg) 14%, transparent);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-32%, -3px);
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease, visibility 140ms ease;
+  z-index: 20;
+}
+.ctx-ring-wrap:hover .ctx-popover,
+.ctx-ring-wrap:focus-within .ctx-popover {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-32%, 0);
+}
+.ctx-pop-label {
+  font-size: 11.5px;
+  color: var(--ag-fg-muted);
+}
+.ctx-pop-pct {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ag-fg);
+}
+.ctx-pop-tok {
+  font-size: 12px;
+  color: var(--ag-fg-2);
+}
+.ctx-pop-sub {
+  margin-top: 3px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ag-border);
+  font-size: 10.5px;
+  color: var(--ag-fg-muted);
+}
+
 /* Segmented Chat | Compact switch */
 .segmented {
   display: inline-flex;
