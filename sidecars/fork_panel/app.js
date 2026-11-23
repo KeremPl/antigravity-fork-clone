@@ -473,7 +473,7 @@
         const heavyDelta = item.tokenDelta >= 25000;
         const branches = Array.isArray(item.branches) ? item.branches : [];
         const canFork = item.canForkAfter && !state.busyAction;
-        const defTitle = `${(snap.title || 'Conversation').trim().replace(/\s*\(\d+\)\s*$/, '')} (n)`;
+        const defTitle = `${(snap.title || 'Conversation').trim()} (1)`;
 
         const workedHtml =
           item.toolCount > 0

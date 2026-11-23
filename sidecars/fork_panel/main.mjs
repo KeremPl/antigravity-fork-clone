@@ -147,15 +147,8 @@ function readSummaryMeta(appData, convId) {
   }
 }
 
-function stripCopySuffix(title) {
-  return String(title || '')
-    .trim()
-    .replace(/\s*\((?:\d+|Clone|Fork\s*#?\d+|Before\s*#?\d+)\)\s*$/i, '')
-    .trim();
-}
-
 function computeNextAutoTitle(appData, parentTitle, projectId) {
-  const base = stripCopySuffix(parentTitle) || 'Conversation';
+  const base = String(parentTitle || '').trim() || 'Conversation';
   const existing = new Set();
 
   if (appData) {
