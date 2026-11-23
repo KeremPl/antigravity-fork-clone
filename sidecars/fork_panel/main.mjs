@@ -233,7 +233,7 @@ function parseTranscriptTurns(appData, convId) {
         forkBeforeStepIndex: -1,
         createdAt: obj.created_at || '',
         userPreview: cleanPreview(userText || (hasMedia ? '[Image / Attachment]' : '(empty message)'), 220),
-        userFull: userText.slice(0, 4000),
+        userFull: userText.slice(0, 8000),
         hasMedia,
         replyPreview: '',
         replyFull: '',
@@ -269,14 +269,15 @@ function parseTranscriptTurns(appData, convId) {
         current.toolCount += obj.tool_calls.length;
         for (const tc of obj.tool_calls) {
           const nm = String(tc?.name || '').trim();
-          if (nm && !current.toolNames.includes(nm) && current.toolNames.length < 8) {
+          if (nm && !current.toolNames.includes(nm) && current.toolNames.length < 12) {
             current.toolNames.push(nm);
           }
         }
       }
       if (typeof obj.content === 'string' && obj.content.trim()) {
-        current.replyPreview = cleanPreview(obj.content, 160);
-        current.replyFull = obj.content.trim().slice(0, 4000);
+        current.replyPreview = cleanPreview(obj.content, 180);
+        current.replyFull = obj.content.trim().slice(0, 8000);
+        if (obj.created_at) current.replyAt = obj.created_at;
       }
     }
   }

@@ -29,14 +29,12 @@ Interestingly, Antigravity Desktop's local Language Server **already implements 
 
 ## Features
 
-- **Git-Graph Chronological Timeline**: Displays turns `#1` (top) to `HEAD` (bottom) matching the chat flow, auto-scrolls to `HEAD`, and shows a floating `↓ HEAD` jump button when scrolling up.
-- **Live Keep / Cut Hover Preview**: Hovering **Fork here** or **Before** highlights the preserved ancestry rail (`1..K`) and dims the turns that will be discarded (`K+1..N`).
-- **Fork After or Before Any Turn**:
-  - **Fork here**: keeps turns `1..K` including turn `K`'s assistant reply.
-  - **Before**: keeps turns `1..K-1` so you can rewrite turn `K` cleanly.
-  - **Clone**: duplicates the entire conversation from its latest completed step.
-- **Inline Turn Inspector**: Click any turn card to inspect the full user prompt, assistant reply, tools invoked, and per-turn context token growth (`+Xk`).
-- **Parent ↔ Child Branch Navigation**: Tracks local fork lineage in the sidecar's isolated `lineage.json` so branched chats appear as clickable branch chips right on the turn they forked from, and child chats display a `↖ Forked from #K` breadcrumb to jump back to the parent.
+- **Antigravity-Native Mini-Chat UI**: Mirrors Antigravity Desktop's own chat canvas — right-aligned user bubbles, borderless Markdown-rendered AI replies, collapsible `Worked · N tools` drawers, and a centered column that expands naturally when you widen the side pane.
+- **Unambiguous AI-Reply Forking (Claude Code / Codex model)**: Every completed AI response has a single **`⑂ Fork`** button in its footer bar (plus an optional `✎` inline rename input). Everything up to and including that AI reply is kept; everything after is cleanly omitted.
+- **Live Cut-Line Hover Preview**: Hovering **`⑂ Fork`** draws a horizontal dashed cut line right beneath that AI response and dims all subsequent turns.
+- **Chat | Compact Switcher**: Switch between full readable chat mode and a high-density overview map for 80+ turn sessions (clicking any compact row jumps right to it in Chat view).
+- **One-Click Full Clone**: Duplicate the entire conversation from its latest completed reply with one click.
+- **Parent ↔ Child Branch Navigation**: Tracks local fork lineage in the sidecar's isolated `lineage.json` so branched chats appear as clickable branch chips right under the AI response they forked from, and child chats display a `↖ Forked from #K` breadcrumb to jump back to the parent.
 - **Built-in EN / TR Language Toggle**: Switch instantly between English and Turkish (`EN` / `TR` button in the header).
 - **`/fork` Slash Command**: Includes a companion `skills/fork/SKILL.md` to open the panel directly from chat.
 

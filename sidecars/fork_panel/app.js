@@ -1,13 +1,16 @@
 /**
- * Native Fork & Clone panel frontend (v2.1).
+ * Antigravity-native Mini-Chat Fork & Clone Panel (v3.0).
  *
- * - Chronological Git-graph timeline (#1 at top -> latest HEAD at bottom)
- *   mirroring the chat flow, with auto-scroll to HEAD and floating jump button.
- * - Live keep/cut hover preview: hovering "Fork here" or "Before"
- *   highlights all turns that will be preserved and dims turns that will be cut.
- * - Click any turn card to inspect full prompt, assistant reply, and tool calls.
- * - Persistent parent <-> child branch chips for 1-click jumping between forks.
- * - Built-in EN / TR i18n with instant toggle (defaults to EN for global builds).
+ * - Mirrors Antigravity Desktop's real chat UI: right-aligned user bubbles +
+ *   borderless Markdown-rendered AI replies + "Worked · N tools" disclosure.
+ * - Single unambiguous "Fork" button beneath every completed AI response
+ *   (Claude Code / Codex mental model — forks right after that AI reply,
+ *   discarding everything below it).
+ * - Hovering "Fork" renders a live horizontal cut divider and dims turns below.
+ * - Optional inline rename (pencil icon) keeps the header minimal while still
+ *   allowing custom branch titles when needed.
+ * - Chat | Compact view toggle + EN / TR i18n + persistent parent <-> child
+ *   branch chips.
  */
 (() => {
   const POLL_MS = 1800;
@@ -15,30 +18,30 @@
 
   const I18N = {
     en: {
+      chat: 'Chat',
+      compact: 'Compact',
       clone: 'Clone',
-      cloneTip: 'Clone the entire conversation from its latest completed turn',
+      cloneTip: 'Clone the entire conversation from its latest completed reply',
       searchPlaceholder: 'Search messages… (/)',
-      sortChrono: 'Chronological',
-      sortNewest: 'Newest first',
-      sortTip: 'Toggle timeline order',
-      titlePlaceholder: 'Branch title (optional)',
       autoOpen: 'Auto-open',
       autoOpenTip: 'Automatically open the newly forked/cloned conversation',
-      jumpHeadTip: 'Jump to latest turn (HEAD)',
-      emptyTitle: 'No turns yet',
-      emptyDesc: 'Once this conversation has at least one completed turn, you can fork from any message or clone it here.',
+      latest: 'Latest',
+      jumpHeadTip: 'Jump to latest message',
+      emptyTitle: 'No messages yet',
+      emptyDesc: 'Once the agent replies to at least one message, you can fork from any AI response or clone the conversation here.',
       noMatches: 'No matching messages found.',
       turnsMeta: (turns, steps) => `${turns} ${turns === 1 ? 'turn' : 'turns'} · ${steps} ${steps === 1 ? 'step' : 'steps'}`,
-      toolCount: (n) => `${n} ${n === 1 ? 'tool' : 'tools'}`,
-      tokSuffix: 'tok',
-      deltaTip: 'Tokens added to context in this turn',
-      working: 'running…',
-      forkHere: 'Fork here',
-      forkHereTip: (n) => `Fork right after turn #${n}'s reply (keeps turns 1..${n})`,
-      before: 'Before',
-      beforeTip: (n) => `Fork right before turn #${n} (keeps turns 1..${n - 1} so you can rewrite #${n})`,
-      details: 'Details',
-      collapse: 'Hide',
+      worked: (n) => `Worked · ${n} ${n === 1 ? 'tool' : 'tools'}`,
+      running: 'Generating response…',
+      fork: 'Fork',
+      forkTip: (n) => `Fork up to this AI response (keeps turns 1..${n})`,
+      forkCutLabel: (n) => `✂ Fork cut — keeps turns 1..${n}`,
+      renameTip: 'Fork with a custom title',
+      renamePlaceholder: (def) => `Branch title (default: ${def})`,
+      confirmFork: 'Fork',
+      cancel: 'Cancel',
+      showMore: 'Show full reply',
+      showLess: 'Show less',
       open: 'Open',
       backToParent: 'Parent',
       clonedFrom: 'Cloned from',
@@ -48,61 +51,72 @@
       creating: (title) => `Creating: ${title}…`,
       created: (title) => `Created: ${title}`,
       forkError: (msg) => `Fork failed: ${msg}`,
+      justNow: 'just now',
+      minsAgo: (m) => `${m}m ago`,
+      hoursAgo: (h) => `${h}h ago`,
+      daysAgo: (d) => `${d}d ago`,
     },
     tr: {
+      chat: 'Sohbet',
+      compact: 'Özet',
       clone: 'Klonla',
-      cloneTip: 'Mevcut sohbeti son tamamlanmış turundan birebir klonla',
-      searchPlaceholder: 'Mesaj ara… (/)',
-      sortChrono: 'Kronolojik',
-      sortNewest: 'Yeniden eskiye',
-      sortTip: 'Sıralamayı değiştir',
-      titlePlaceholder: 'Yeni dal adı (isteğe bağlı)',
+      cloneTip: 'Tüm sohbeti son tamamlanan yanıttan birebir klonla',
+      searchPlaceholder: 'Mesajlarda ara… (/)',
       autoOpen: 'Hemen aç',
       autoOpenTip: 'Fork veya klon oluşunca yeni sohbeti otomatik aç',
-      jumpHeadTip: 'En son mesaja (HEAD) git',
+      latest: 'En son',
+      jumpHeadTip: 'En son mesaja git',
       emptyTitle: 'Henüz mesaj yok',
-      emptyDesc: 'Bu sohbette en az bir tamamlanmış tur olduğunda buradan istediğin mesajdan fork veya klon alabilirsin.',
+      emptyDesc: 'Ajan en az bir mesaja yanıt verdiğinde, istediğin AI yanıtının altından fork alabilir veya sohbeti klonlayabilirsin.',
       noMatches: 'Eşleşen mesaj bulunamadı.',
       turnsMeta: (turns, steps) => `${turns} tur · ${steps} adım`,
-      toolCount: (n) => `${n} tool`,
-      tokSuffix: 'tok',
-      deltaTip: "Bu turun context'e eklediği token",
-      working: 'çalışıyor…',
-      forkHere: 'Buradan Forkla',
-      forkHereTip: (n) => `Bu mesaj ve cevabından hemen sonrasını yeni sohbete forkla (1..${n})`,
-      before: 'Öncesinden',
-      beforeTip: (n) => `Bu mesajı çıkarıp #${n - 1}. turdan yeniden yazmak için öncesinden forkla`,
-      details: 'Detay',
-      collapse: 'Daralt',
+      worked: (n) => `Çalıştı · ${n} tool`,
+      running: 'Yanıt oluşturuluyor…',
+      fork: 'Fork',
+      forkTip: (n) => `Bu AI yanıtına kadar forkla (1..${n} turları kalır, sonrası alınmaz)`,
+      forkCutLabel: (n) => `✂ Kesim noktası — 1..${n} turları kalır`,
+      renameTip: 'Özel başlıkla forkla',
+      renamePlaceholder: (def) => `Dal adı (boşsa: ${def})`,
+      confirmFork: 'Forkla',
+      cancel: 'Vazgeç',
+      showMore: 'Devamını göster',
+      showLess: 'Daralt',
       open: 'Aç',
       backToParent: 'Orijinale dön',
       clonedFrom: 'Klonlandı',
-      forkedFromTurn: (n) => `#${n} turundan fork`,
+      forkedFromTurn: (n) => `#${n} yanıtından fork`,
       forkedFrom: 'Fork kaynağı',
       switchBranchTip: (title) => `Dal sohbetine geç: ${title}`,
       creating: (title) => `Oluşturuluyor: ${title}…`,
       created: (title) => `Oluşturuldu: ${title}`,
       forkError: (msg) => `Fork hatası: ${msg}`,
+      justNow: 'az önce',
+      minsAgo: (m) => `${m}dk önce`,
+      hoursAgo: (h) => `${h}s önce`,
+      daysAgo: (d) => `${d}g önce`,
     },
   };
 
-  function resolveInitialLang() {
+  function readPref(key, fallback) {
     try {
-      const saved = localStorage.getItem('fork_clone_lang');
-      if (saved === 'en' || saved === 'tr') return saved;
-    } catch {}
-    return 'en';
+      return localStorage.getItem(key) || fallback;
+    } catch {
+      return fallback;
+    }
   }
 
   const state = {
-    lang: resolveInitialLang(),
+    lang: readPref('fork_clone_lang', 'en') === 'tr' ? 'tr' : 'en',
+    viewMode: readPref('fork_clone_mode', 'chat') === 'compact' ? 'compact' : 'chat',
     etag: '',
     snap: null,
     fallbackConvId: new URLSearchParams(location.search).get('conversationId') || '',
-    newestFirst: false, // Chronological: #1 top -> latest HEAD bottom
     query: '',
     busyAction: false,
-    expandedTurns: new Set(),
+    expandedReplies: new Set(),
+    expandedUsers: new Set(),
+    expandedTools: new Set(),
+    renamingTurn: null, // turnNumber currently showing inline rename input
     stickBottom: true,
     didInitialScroll: false,
     timer: null,
@@ -113,15 +127,17 @@
   function applyStaticStrings() {
     const L = t();
     document.documentElement.lang = state.lang;
+    $('mode-chat').textContent = L.chat;
+    $('mode-compact').textContent = L.compact;
+    $('mode-chat').classList.toggle('on', state.viewMode === 'chat');
+    $('mode-compact').classList.toggle('on', state.viewMode === 'compact');
     $('lang-btn').textContent = state.lang.toUpperCase();
     $('clone-label').textContent = L.clone;
     $('clone-btn').title = L.cloneTip;
     $('search-input').placeholder = L.searchPlaceholder;
-    $('sort-label').textContent = state.newestFirst ? L.sortNewest : L.sortChrono;
-    $('sort-btn').title = L.sortTip;
-    $('custom-title').placeholder = L.titlePlaceholder;
     $('auto-open-label').textContent = L.autoOpen;
     $('auto-open-wrap').title = L.autoOpenTip;
+    $('jump-label').textContent = L.latest;
     $('jump-head').title = L.jumpHeadTip;
     $('empty-title').textContent = L.emptyTitle;
     $('empty-desc').textContent = L.emptyDesc;
@@ -168,11 +184,128 @@
     return String(v);
   }
 
-  function fmtTime(iso) {
+  function fmtRelTime(iso) {
     if (!iso) return '';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const ts = Date.parse(iso);
+    if (!Number.isFinite(ts)) return '';
+    const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    const L = t();
+    if (diffSec < 60) return L.justNow;
+    const mins = Math.floor(diffSec / 60);
+    if (mins < 60) return L.minsAgo(mins);
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return L.hoursAgo(hours);
+    const days = Math.floor(hours / 24);
+    if (days < 14) return L.daysAgo(days);
+    return new Date(ts).toLocaleDateString();
+  }
+
+  // Lightweight XSS-safe Markdown renderer matching Antigravity prose styling
+  function formatInline(escaped) {
+    let out = escaped;
+    // Inline code first (protect with placeholders)
+    const codes = [];
+    out = out.replace(/`([^`\n]+)`/g, (_, c) => {
+      codes.push(`<code>${c}</code>`);
+      return `\x00CODE${codes.length - 1}\x00`;
+    });
+    // Markdown links [label](url) -> clean styled text (never navigates iframe)
+    out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<strong>$1</strong>');
+    // Bold & italic
+    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    out = out.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+    // Restore inline codes
+    out = out.replace(/\x00CODE(\d+)\x00/g, (_, i) => codes[Number(i)] || '');
+    return out;
+  }
+
+  function renderMarkdown(raw) {
+    const text = String(raw || '').replace(/\r\n/g, '\n').trim();
+    if (!text) return '';
+
+    const blocks = [];
+    const fenceRe = /```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g;
+    let last = 0;
+    let m;
+    while ((m = fenceRe.exec(text)) !== null) {
+      if (m.index > last) blocks.push({ type: 'md', text: text.slice(last, m.index) });
+      blocks.push({ type: 'code', text: m[1] });
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) blocks.push({ type: 'md', text: text.slice(last) });
+
+    const htmlParts = [];
+    for (const blk of blocks) {
+      if (blk.type === 'code') {
+        htmlParts.push(`<pre><code>${esc(blk.text.replace(/\n$/, ''))}</code></pre>`);
+        continue;
+      }
+      const lines = blk.text.split('\n');
+      let inUl = false;
+      let inOl = false;
+      let paraLines = [];
+
+      const flushPara = () => {
+        if (!paraLines.length) return;
+        htmlParts.push(`<p>${formatInline(esc(paraLines.join('\n'))).replace(/\n/g, '<br>')}</p>`);
+        paraLines = [];
+      };
+      const closeLists = () => {
+        if (inUl) { htmlParts.push('</ul>'); inUl = false; }
+        if (inOl) { htmlParts.push('</ol>'); inOl = false; }
+      };
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          flushPara();
+          closeLists();
+          continue;
+        }
+        if (/^-{3,}$|^\*{3,}$/.test(trimmed)) {
+          flushPara();
+          closeLists();
+          htmlParts.push('<hr>');
+          continue;
+        }
+        const hMatch = trimmed.match(/^(#{1,4})\s+(.+)$/);
+        if (hMatch) {
+          flushPara();
+          closeLists();
+          const lvl = hMatch[1].length;
+          htmlParts.push(`<h${lvl}>${formatInline(esc(hMatch[2]))}</h${lvl}>`);
+          continue;
+        }
+        const bqMatch = trimmed.match(/^>\s?(.*)$/);
+        if (bqMatch) {
+          flushPara();
+          closeLists();
+          htmlParts.push(`<blockquote>${formatInline(esc(bqMatch[1]))}</blockquote>`);
+          continue;
+        }
+        const ulMatch = trimmed.match(/^[-*•]\s+(.+)$/);
+        if (ulMatch) {
+          flushPara();
+          if (inOl) { htmlParts.push('</ol>'); inOl = false; }
+          if (!inUl) { htmlParts.push('<ul>'); inUl = true; }
+          htmlParts.push(`<li>${formatInline(esc(ulMatch[1]))}</li>`);
+          continue;
+        }
+        const olMatch = trimmed.match(/^\d+\.\s+(.+)$/);
+        if (olMatch) {
+          flushPara();
+          if (inUl) { htmlParts.push('</ul>'); inUl = false; }
+          if (!inOl) { htmlParts.push('<ol>'); inOl = true; }
+          htmlParts.push(`<li>${formatInline(esc(olMatch[1]))}</li>`);
+          continue;
+        }
+        closeLists();
+        paraLines.push(line);
+      }
+      flushPara();
+      closeLists();
+    }
+    return htmlParts.join('');
   }
 
   function currentConvId() {
@@ -194,50 +327,43 @@
     `;
   }
 
-  function scrollToHead(smooth = true) {
-    const scroller = $('timeline-scroll');
+  function scrollToLatest(smooth = true) {
+    const scroller = $('chat-scroll');
     if (!scroller) return;
-    const target = state.newestFirst ? 0 : scroller.scrollHeight;
-    scroller.scrollTo({ top: target, behavior: smooth ? 'smooth' : 'auto' });
+    scroller.scrollTo({ top: scroller.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
   }
 
   function updateJumpButton() {
-    const scroller = $('timeline-scroll');
+    const scroller = $('chat-scroll');
     const btn = $('jump-head');
     if (!scroller || !btn) return;
-    if (state.newestFirst) {
-      const away = scroller.scrollTop > 120;
-      btn.classList.toggle('hidden', !away);
-      state.stickBottom = !away;
-    } else {
-      const distBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-      const away = distBottom > 120;
-      btn.classList.toggle('hidden', !away);
-      state.stickBottom = !away;
-    }
+    const distBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+    const away = distBottom > 140;
+    btn.classList.toggle('hidden', !away);
+    state.stickBottom = !away;
   }
 
-  // ---------- Hover Cut/Keep Visual Preview ----------
+  // ---------- Hover Cut Preview ----------
   function applyCutoffPreview(cutoffTurn) {
-    document.querySelectorAll('.node-row[data-turn]').forEach((row) => {
+    document.querySelectorAll('[data-turn-node]').forEach((el) => {
       if (cutoffTurn === null) {
-        row.classList.remove('preview-keep', 'preview-cut', 'preview-cutoff');
+        el.classList.remove('preview-cut', 'preview-cutoff');
         return;
       }
-      const n = Number(row.dataset.turn);
-      if (n <= cutoffTurn) {
-        row.classList.add('preview-keep');
-        row.classList.remove('preview-cut');
-        row.classList.toggle('preview-cutoff', n === cutoffTurn);
-      } else {
-        row.classList.add('preview-cut');
-        row.classList.remove('preview-keep', 'preview-cutoff');
-      }
+      const n = Number(el.dataset.turnNode);
+      el.classList.toggle('preview-cut', n > cutoffTurn);
+      el.classList.toggle('preview-cutoff', n === cutoffTurn);
     });
   }
 
   const FORK_ICON =
-    '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4.5" cy="4" r="1.75"/><circle cx="11.5" cy="4" r="1.75"/><circle cx="8" cy="12" r="1.75"/><path d="M4.5 5.75v1.5c0 1.75 3.5 1.75 3.5 3M11.5 5.75v1.5c0 1.75-3.5 1.75-3.5 3"/></svg>';
+    '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4.5" cy="4" r="1.75"/><circle cx="11.5" cy="4" r="1.75"/><circle cx="8" cy="12" r="1.75"/><path d="M4.5 5.75v1.5c0 1.75 3.5 1.75 3.5 3M11.5 5.75v1.5c0 1.75-3.5 1.75-3.5 3"/></svg>';
+
+  const PENCIL_ICON =
+    '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.3 2.7a1.5 1.5 0 0 1 2.1 2.1L5.8 12.4 2.5 13.5l1.1-3.3 7.7-7.5z"/></svg>';
+
+  const CHEV_ICON =
+    '<svg class="worked-chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg>';
 
   function renderParentCrumb(snap) {
     const el = $('parent-crumb');
@@ -267,7 +393,6 @@
 
     const L = t();
     const q = state.query.trim().toLowerCase();
-    const totalTurns = (snap.turns || []).length;
     let items = [...(snap.turns || [])];
     if (q) {
       items = items.filter(
@@ -277,42 +402,107 @@
           `#${item.turnNumber}`.includes(q)
       );
     }
-    if (state.newestFirst) items.reverse();
+
+    list.classList.toggle('compact', state.viewMode === 'compact');
 
     if (!items.length) {
       list.innerHTML = `<div class="empty-card"><p class="empty-desc">${esc(L.noMatches)}</p></div>`;
       return;
     }
 
+    if (state.viewMode === 'compact') {
+      list.innerHTML = items
+        .map((item) => {
+          const disabled = !item.canForkAfter || state.busyAction ? 'disabled' : '';
+          return `
+            <div class="compact-row" data-turn-node="${item.turnNumber}">
+              <span class="compact-num num">#${item.turnNumber}</span>
+              <div class="compact-body" data-jump-chat="${item.turnNumber}" title="Open in Chat view">
+                <span class="compact-user">${esc(item.userPreview)}</span>
+                <span class="compact-ai">${esc(item.replyPreview || (item.inProgress ? L.running : ''))}</span>
+              </div>
+              <div class="compact-actions">
+                <button
+                  type="button"
+                  class="fork-action"
+                  data-fork-step="${item.endStepIndex}"
+                  data-fork-turn="${item.turnNumber}"
+                  data-preview-cutoff="${item.turnNumber}"
+                  title="${esc(L.forkTip(item.turnNumber))}"
+                  ${disabled}
+                >
+                  ${FORK_ICON}
+                  <span>${esc(L.fork)}</span>
+                </button>
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+      return;
+    }
+
+    // CHAT MODE — authentic Antigravity conversation mirror
     list.innerHTML = items
       .map((item) => {
-        const isHead = item.turnNumber === totalTurns;
-        const expanded = state.expandedTurns.has(item.turnNumber);
-        const timeStr = fmtTime(item.createdAt);
-        const tokStr = fmtTok(item.promptTokens);
-        const deltaStr = item.tokenDelta >= 1000 ? `+${fmtTok(item.tokenDelta)}` : '';
+        const userText = item.userFull || item.userPreview || '';
+        const longUser = userText.length > 320 || (userText.match(/\n/g) || []).length >= 5;
+        const userExpanded = state.expandedUsers.has(item.turnNumber);
+
+        const replyText = item.replyFull || item.replyPreview || '';
+        const longReply = replyText.length > 560 || (replyText.match(/\n/g) || []).length >= 9;
+        const replyExpanded = state.expandedReplies.has(item.turnNumber);
+        const toolsExpanded = state.expandedTools.has(item.turnNumber);
+        const isRenaming = state.renamingTurn === item.turnNumber;
+
+        const relTime = fmtRelTime(item.replyAt || item.createdAt);
+        const deltaStr = item.tokenDelta >= 1000 ? `+${fmtTok(item.tokenDelta)} tok` : '';
         const heavyDelta = item.tokenDelta >= 25000;
-        const toolStr = item.toolCount > 0 ? L.toolCount(item.toolCount) : '';
-        const metaParts = [timeStr, tokStr ? `${tokStr} ${L.tokSuffix}` : '', toolStr].filter(Boolean);
         const branches = Array.isArray(item.branches) ? item.branches : [];
-        const hasBranches = branches.length > 0;
-        const disabledAttr = state.busyAction ? ' disabled' : '';
+        const canFork = item.canForkAfter && !state.busyAction;
+        const defTitle = `${(snap.title || 'Conversation').trim()} (Fork #${item.turnNumber})`;
 
-        const rowClasses = [
-          'node-row',
-          isHead ? 'is-head' : '',
-          expanded ? 'expanded' : '',
-          hasBranches ? 'has-branches' : '',
-        ]
-          .filter(Boolean)
-          .join(' ');
-
-        const toolsHtml =
-          expanded && item.toolNames?.length
-            ? `<div class="tool-chips">${item.toolNames.map((n) => `<span class="tool-chip">${esc(n)}</span>`).join('')}</div>`
+        const workedHtml =
+          item.toolCount > 0
+            ? `
+              <button type="button" class="worked-btn" data-toggle-tools="${item.turnNumber}" aria-expanded="${toolsExpanded ? 'true' : 'false'}">
+                <span>${esc(L.worked(item.toolCount))}</span>
+                ${CHEV_ICON}
+              </button>
+              ${
+                toolsExpanded && item.toolNames?.length
+                  ? `<div class="tool-drawer">${item.toolNames.map((n) => `<span class="tool-chip">${esc(n)}</span>`).join('')}</div>`
+                  : ''
+              }
+            `
             : '';
 
-        const branchesHtml = hasBranches
+        const proseHtml = replyText
+          ? `
+            <div class="ai-prose-wrap${longReply && !replyExpanded ? ' clamped' : ''}">
+              <div class="ai-prose">${renderMarkdown(replyText)}</div>
+            </div>
+            ${
+              longReply
+                ? `<button type="button" class="more-btn" data-toggle-reply="${item.turnNumber}">${esc(replyExpanded ? L.showLess : L.showMore)}</button>`
+                : ''
+            }
+          `
+          : item.inProgress
+            ? `<div class="ai-pending">${esc(L.running)}</div>`
+            : '';
+
+        const renameHtml = isRenaming
+          ? `
+            <form class="inline-rename" data-rename-form="${item.turnNumber}" data-fork-step="${item.endStepIndex}">
+              <input type="text" class="rename-input" placeholder="${esc(L.renamePlaceholder(defTitle))}" autocomplete="off">
+              <button type="submit" class="primary-btn">${esc(L.confirmFork)}</button>
+              <button type="button" class="ghost-btn" data-cancel-rename="1">${esc(L.cancel)}</button>
+            </form>
+          `
+          : '';
+
+        const branchesHtml = branches.length
           ? `<div class="branch-chips">${branches
               .map(
                 (b) =>
@@ -322,67 +512,66 @@
           : '';
 
         return `
-          <div class="${rowClasses}" data-turn="${item.turnNumber}">
-            <div class="rail" aria-hidden="true">
-              <span class="rail-line top"></span>
-              <span class="rail-dot"></span>
-              <span class="rail-line bottom"></span>
-            </div>
-            <article class="node-card">
-              <div class="node-top" data-toggle-turn="${item.turnNumber}">
-                <div class="node-badges">
-                  <span class="turn-num num">#${item.turnNumber}</span>
-                  ${isHead ? '<span class="head-pill">HEAD</span>' : ''}
-                  ${metaParts.map((m) => `<span class="meta-pill num">${esc(m)}</span>`).join('<span class="meta-pill">·</span>')}
-                  ${deltaStr ? `<span class="delta-pill num${heavyDelta ? ' heavy' : ''}" title="${esc(L.deltaTip)}">(${esc(deltaStr)})</span>` : ''}
-                  ${item.inProgress ? `<span class="meta-pill">${esc(L.working)}</span>` : ''}
-                </div>
+          <section class="exchange" data-turn-node="${item.turnNumber}">
+            <div class="user-row">
+              <div class="user-bubble${longUser && !userExpanded ? ' clamped' : ''}" data-toggle-user="${item.turnNumber}">
+                <span class="user-turn-tag">#${item.turnNumber}</span>${esc(userText)}
               </div>
-              <div class="node-user" data-toggle-turn="${item.turnNumber}">${esc(expanded ? item.userFull || item.userPreview : item.userPreview)}</div>
+            </div>
+
+            <div class="ai-block">
+              ${workedHtml}
+              ${proseHtml}
+
               ${
-                item.replyPreview
-                  ? `<div class="node-reply" data-toggle-turn="${item.turnNumber}">${esc(expanded ? item.replyFull || item.replyPreview : item.replyPreview)}</div>`
+                item.canForkAfter
+                  ? `
+                    <div class="ai-footer">
+                      <button
+                        type="button"
+                        class="fork-action"
+                        data-fork-step="${item.endStepIndex}"
+                        data-fork-turn="${item.turnNumber}"
+                        data-preview-cutoff="${item.turnNumber}"
+                        title="${esc(L.forkTip(item.turnNumber))}"
+                        ${canFork ? '' : 'disabled'}
+                      >
+                        ${FORK_ICON}
+                        <span>${esc(L.fork)}</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="rename-toggle${isRenaming ? ' active' : ''}"
+                        data-open-rename="${item.turnNumber}"
+                        data-preview-cutoff="${item.turnNumber}"
+                        title="${esc(L.renameTip)}"
+                        ${canFork ? '' : 'disabled'}
+                      >${PENCIL_ICON}</button>
+                      ${relTime ? `<span class="footer-meta num">${esc(relTime)}</span>` : ''}
+                      ${deltaStr ? `<span class="footer-meta num${heavyDelta ? ' heavy' : ''}">· ${esc(deltaStr)}</span>` : ''}
+                    </div>
+                  `
                   : ''
               }
-              ${toolsHtml}
+
+              ${renameHtml}
               ${branchesHtml}
-              <div class="node-actions">
-                <button
-                  type="button"
-                  class="fork-btn"
-                  data-fork-step="${item.endStepIndex}"
-                  data-fork-turn="${item.turnNumber}"
-                  data-preview-cutoff="${item.turnNumber}"
-                  data-fork-label="Fork #${item.turnNumber}"
-                  title="${esc(L.forkHereTip(item.turnNumber))}"
-                  ${!item.canForkAfter || state.busyAction ? 'disabled' : ''}
-                >
-                  ${FORK_ICON}
-                  <span>${esc(L.forkHere)}</span>
-                </button>
-                ${
-                  item.canForkBefore
-                    ? `<button
-                        type="button"
-                        class="fork-btn secondary"
-                        data-fork-step="${item.forkBeforeStepIndex}"
-                        data-fork-turn="${item.turnNumber - 1}"
-                        data-preview-cutoff="${item.turnNumber - 1}"
-                        data-fork-label="Before #${item.turnNumber}"
-                        title="${esc(L.beforeTip(item.turnNumber))}"
-                        ${disabledAttr}
-                      >${esc(L.before)}</button>`
-                    : ''
-                }
-                <button type="button" class="expand-hint" data-toggle-turn="${item.turnNumber}">
-                  ${esc(expanded ? L.collapse : L.details)}
-                </button>
-              </div>
-            </article>
-          </div>
+            </div>
+
+            <div class="cut-divider" aria-hidden="true">
+              <span class="cut-line"></span>
+              <span class="cut-label">${esc(L.forkCutLabel(item.turnNumber))}</span>
+              <span class="cut-line"></span>
+            </div>
+          </section>
         `;
       })
       .join('');
+
+    if (state.renamingTurn !== null) {
+      const inp = list.querySelector('.rename-input');
+      if (inp) inp.focus();
+    }
   }
 
   function render(snap) {
@@ -405,8 +594,7 @@
     $('conv-title').title = `${snap.title || ''} (${snap.conversationId})`;
     $('conv-meta').textContent = t().turnsMeta(snap.turnCount, snap.totalSteps);
 
-    const cloneBtn = $('clone-btn');
-    cloneBtn.disabled = state.busyAction || snap.latestForkStepIndex < 0;
+    $('clone-btn').disabled = state.busyAction || snap.latestForkStepIndex < 0;
 
     renderTurns();
 
@@ -415,12 +603,12 @@
     if (!state.didInitialScroll || switchedConv) {
       state.didInitialScroll = true;
       requestAnimationFrame(() => {
-        scrollToHead(false);
+        scrollToLatest(false);
         updateJumpButton();
       });
     } else if (addedTurn && state.stickBottom) {
       requestAnimationFrame(() => {
-        scrollToHead(true);
+        scrollToLatest(true);
         updateJumpButton();
       });
     } else {
@@ -429,20 +617,19 @@
   }
 
   // ---------- Actions ----------
-  async function executeFork(stepIndex, defaultSuffix, turnNumber = 0, kind = 'fork') {
+  async function executeFork(stepIndex, defaultSuffix, turnNumber = 0, kind = 'fork', explicitTitle = '') {
     const conv = currentConvId();
     if (!conv || stepIndex < 0 || state.busyAction) return;
 
     const L = t();
     state.busyAction = true;
+    state.renamingTurn = null;
     applyCutoffPreview(null);
     $('clone-btn').disabled = true;
     renderTurns();
 
-    const customInput = $('custom-title');
-    const rawCustom = (customInput?.value || '').trim();
     const baseTitle = (state.snap?.title || 'Conversation').trim();
-    const finalTitle = rawCustom || `${baseTitle} (${defaultSuffix})`;
+    const finalTitle = (explicitTitle || '').trim() || `${baseTitle} (${defaultSuffix})`;
 
     showToast('', L.creating(finalTitle));
 
@@ -464,7 +651,6 @@
         throw new Error(data.error || `HTTP ${res.status}`);
       }
 
-      if (customInput) customInput.value = '';
       const createdTitle = data.title || finalTitle;
       showToast('ok', L.created(createdTitle), data.newCascadeId);
 
@@ -512,11 +698,27 @@
   }
 
   // ---------- Events ----------
+  $('mode-chat').addEventListener('click', () => {
+    if (state.viewMode === 'chat') return;
+    state.viewMode = 'chat';
+    try { localStorage.setItem('fork_clone_mode', 'chat'); } catch {}
+    applyStaticStrings();
+    renderTurns();
+    requestAnimationFrame(() => { scrollToLatest(false); updateJumpButton(); });
+  });
+
+  $('mode-compact').addEventListener('click', () => {
+    if (state.viewMode === 'compact') return;
+    state.viewMode = 'compact';
+    try { localStorage.setItem('fork_clone_mode', 'compact'); } catch {}
+    applyStaticStrings();
+    renderTurns();
+    requestAnimationFrame(() => { scrollToLatest(false); updateJumpButton(); });
+  });
+
   $('lang-btn').addEventListener('click', () => {
     state.lang = state.lang === 'en' ? 'tr' : 'en';
-    try {
-      localStorage.setItem('fork_clone_lang', state.lang);
-    } catch {}
+    try { localStorage.setItem('fork_clone_lang', state.lang); } catch {}
     applyStaticStrings();
     if (state.snap) render(state.snap);
   });
@@ -531,28 +733,28 @@
     renderTurns();
   });
 
-  $('sort-btn').addEventListener('click', () => {
-    state.newestFirst = !state.newestFirst;
-    applyStaticStrings();
-    renderTurns();
-    requestAnimationFrame(() => {
-      scrollToHead(false);
-      updateJumpButton();
-    });
-  });
-
-  $('jump-head').addEventListener('click', () => scrollToHead(true));
-  $('timeline-scroll').addEventListener('scroll', updateJumpButton, { passive: true });
+  $('jump-head').addEventListener('click', () => scrollToLatest(true));
+  $('chat-scroll').addEventListener('scroll', updateJumpButton, { passive: true });
 
   document.addEventListener('mouseover', (e) => {
     const btn = e.target.closest('[data-preview-cutoff]');
     if (btn && !btn.disabled) {
       applyCutoffPreview(Number(btn.dataset.previewCutoff));
-    } else if (!e.target.closest('.node-actions')) {
+    } else if (!e.target.closest('.ai-footer') && !e.target.closest('.compact-actions')) {
       applyCutoffPreview(null);
     }
   });
   document.addEventListener('mouseleave', () => applyCutoffPreview(null));
+
+  document.addEventListener('submit', (e) => {
+    const form = e.target.closest('[data-rename-form]');
+    if (!form) return;
+    e.preventDefault();
+    const tn = Number(form.dataset.renameForm);
+    const stepIdx = Number(form.dataset.forkStep);
+    const customTitle = (form.querySelector('.rename-input')?.value || '').trim();
+    executeFork(stepIdx, `Fork #${tn}`, tn, 'fork', customTitle);
+  });
 
   document.addEventListener('click', (e) => {
     const openBtn = e.target.closest('[data-open-conv]');
@@ -561,21 +763,61 @@
       openConversation(openBtn.dataset.openConv);
       return;
     }
-    const forkBtn = e.target.closest('[data-fork-step]');
+    const forkBtn = e.target.closest('[data-fork-step]:not(form)');
     if (forkBtn && !forkBtn.disabled) {
       e.stopPropagation();
       const stepIdx = Number(forkBtn.dataset.forkStep);
-      const turnNum = Number(forkBtn.dataset.forkTurn) || 0;
-      const label = forkBtn.dataset.forkLabel || 'Fork';
-      executeFork(stepIdx, label, turnNum, 'fork');
+      const tn = Number(forkBtn.dataset.forkTurn) || 0;
+      executeFork(stepIdx, `Fork #${tn}`, tn, 'fork');
       return;
     }
-    const toggleEl = e.target.closest('[data-toggle-turn]');
-    if (toggleEl) {
-      const tn = Number(toggleEl.dataset.toggleTurn);
-      if (state.expandedTurns.has(tn)) state.expandedTurns.delete(tn);
-      else state.expandedTurns.add(tn);
+    const renameBtn = e.target.closest('[data-open-rename]');
+    if (renameBtn && !renameBtn.disabled) {
+      e.stopPropagation();
+      const tn = Number(renameBtn.dataset.openRename);
+      state.renamingTurn = state.renamingTurn === tn ? null : tn;
       renderTurns();
+      return;
+    }
+    if (e.target.closest('[data-cancel-rename]')) {
+      state.renamingTurn = null;
+      renderTurns();
+      return;
+    }
+    const toolsBtn = e.target.closest('[data-toggle-tools]');
+    if (toolsBtn) {
+      const tn = Number(toolsBtn.dataset.toggleTools);
+      if (state.expandedTools.has(tn)) state.expandedTools.delete(tn);
+      else state.expandedTools.add(tn);
+      renderTurns();
+      return;
+    }
+    const replyBtn = e.target.closest('[data-toggle-reply]');
+    if (replyBtn) {
+      const tn = Number(replyBtn.dataset.toggleReply);
+      if (state.expandedReplies.has(tn)) state.expandedReplies.delete(tn);
+      else state.expandedReplies.add(tn);
+      renderTurns();
+      return;
+    }
+    const userBubble = e.target.closest('[data-toggle-user]');
+    if (userBubble && userBubble.classList.contains('clamped')) {
+      state.expandedUsers.add(Number(userBubble.dataset.toggleUser));
+      renderTurns();
+      return;
+    }
+    const jumpChat = e.target.closest('[data-jump-chat]');
+    if (jumpChat) {
+      const tn = Number(jumpChat.dataset.jumpChat);
+      state.viewMode = 'chat';
+      try { localStorage.setItem('fork_clone_mode', 'chat'); } catch {}
+      applyStaticStrings();
+      renderTurns();
+      requestAnimationFrame(() => {
+        const targetEl = document.querySelector(`.exchange[data-turn-node="${tn}"]`);
+        if (targetEl) targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        updateJumpButton();
+      });
     }
   });
 
@@ -585,11 +827,16 @@
     if (e.key === '/' && !isInput) {
       e.preventDefault();
       $('search-input')?.focus();
-    } else if (e.key === 'Escape' && isInput && active.id === 'search-input') {
-      $('search-input').value = '';
-      state.query = '';
-      $('search-input').blur();
-      renderTurns();
+    } else if (e.key === 'Escape') {
+      if (state.renamingTurn !== null) {
+        state.renamingTurn = null;
+        renderTurns();
+      } else if (isInput && active.id === 'search-input') {
+        $('search-input').value = '';
+        state.query = '';
+        $('search-input').blur();
+        renderTurns();
+      }
     }
   });
 

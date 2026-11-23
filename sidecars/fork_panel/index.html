@@ -8,26 +8,32 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:ROND,opsz,slnt,wdth,wght@0..100,6..144,-10..0,92..100,100..1000&family=Google+Sans+Code:ital,wght@0,300..800;1,300..800&display=swap">
-  <link rel="stylesheet" href="/styles.css?v=2.1.0">
+  <link rel="stylesheet" href="/styles.css?v=3.0.0">
 </head>
 <body>
   <div id="loading" class="loading" aria-live="polite">
-    <span class="skel" style="width: 56%; height: 14px"></span>
-    <span class="skel" style="width: 100%; height: 34px; border-radius: 8px"></span>
-    <span class="skel" style="width: 100%; height: 64px; border-radius: 8px"></span>
-    <span class="skel" style="width: 100%; height: 64px; border-radius: 8px"></span>
+    <div class="skel-bubble-r"><span class="skel" style="width: 62%; height: 32px; border-radius: 12px"></span></div>
+    <span class="skel" style="width: 34%; height: 12px"></span>
+    <span class="skel" style="width: 96%; height: 14px"></span>
+    <span class="skel" style="width: 82%; height: 14px"></span>
+    <div class="skel-bubble-r"><span class="skel" style="width: 48%; height: 32px; border-radius: 12px"></span></div>
+    <span class="skel" style="width: 90%; height: 14px"></span>
   </div>
 
   <div id="panel" class="panel hidden">
     <header class="header">
       <div id="parent-crumb" class="parent-crumb hidden"></div>
 
-      <div class="title-row">
+      <div class="header-row">
         <div class="title-col">
           <h1 id="conv-title" class="conv-title">Conversation</h1>
           <div id="conv-meta" class="conv-meta num">0 turns</div>
         </div>
         <div class="head-actions">
+          <div class="segmented" role="group" aria-label="View density">
+            <button type="button" id="mode-chat" class="seg-btn on" data-mode="chat">Chat</button>
+            <button type="button" id="mode-compact" class="seg-btn" data-mode="compact">Compact</button>
+          </div>
           <button type="button" id="lang-btn" class="lang-btn" title="Switch language (EN / TR)">EN</button>
           <button type="button" id="clone-btn" class="primary-btn" title="Clone the entire conversation from its latest turn">
             <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
@@ -39,7 +45,7 @@
         </div>
       </div>
 
-      <div class="controls-bar">
+      <div class="sub-bar">
         <label class="search-box">
           <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
             <circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/>
@@ -47,16 +53,6 @@
           </svg>
           <input id="search-input" type="search" placeholder="Search messages… (/)" autocomplete="off">
         </label>
-        <button type="button" id="sort-btn" class="icon-pill" title="Toggle timeline order">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 3v10M2.5 10.5 5 13l2.5-2.5M11 13V3M8.5 5.5 11 3l2.5 2.5"/>
-          </svg>
-          <span id="sort-label">Chronological</span>
-        </button>
-      </div>
-
-      <div class="options-row">
-        <input id="custom-title" type="text" class="text-input" placeholder="Branch title (optional)" autocomplete="off">
         <label id="auto-open-wrap" class="check-wrap" title="Open the newly forked/cloned conversation automatically">
           <input id="auto-open" type="checkbox" checked>
           <span id="auto-open-label">Auto-open</span>
@@ -66,15 +62,15 @@
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </header>
 
-    <main id="timeline-scroll" class="timeline-scroll" aria-label="Message timeline">
-      <div id="turns-list" class="timeline"></div>
+    <main id="chat-scroll" class="chat-scroll" aria-label="Conversation history">
+      <div id="turns-list" class="chat-feed"></div>
     </main>
 
-    <button type="button" id="jump-head" class="jump-head hidden" title="Jump to latest turn (HEAD)">
+    <button type="button" id="jump-head" class="jump-head hidden" title="Jump to latest message">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M8 3v9.5M4 9l4 4 4-4"/>
       </svg>
-      <span>HEAD</span>
+      <span id="jump-label">Latest</span>
     </button>
   </div>
 
@@ -86,11 +82,11 @@
         <circle cx="12" cy="18" r="2.5"/>
         <path d="M6 8.5v2c0 2.5 6 2.5 6 5M18 8.5v2c0 2.5-6 2.5-6 5"/>
       </svg>
-      <h2 id="empty-title" class="empty-title">No turns yet</h2>
-      <p id="empty-desc" class="empty-desc">Once this conversation has at least one completed turn, you can fork from any message or clone it here.</p>
+      <h2 id="empty-title" class="empty-title">No messages yet</h2>
+      <p id="empty-desc" class="empty-desc">Once the agent replies to at least one message, you can fork from any AI response or clone the conversation here.</p>
     </div>
   </section>
 
-  <script src="/app.js?v=2.1.0"></script>
+  <script src="/app.js?v=3.0.0"></script>
 </body>
 </html>
