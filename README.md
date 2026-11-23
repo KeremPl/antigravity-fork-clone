@@ -46,12 +46,12 @@ Requires **Google Antigravity Desktop** (v2.34+) and **Node.js 22+** (or Antigra
 
 ### Option 1: One-command install via `agy` CLI
 ```bash
-agy plugin install https://github.com/<your-username>/antigravity-fork-clone
+agy plugin install https://github.com/KeremPl/antigravity-fork-clone
 ```
 
 ### Option 2: Clone & install locally
 ```bash
-git clone https://github.com/<your-username>/antigravity-fork-clone.git
+git clone https://github.com/KeremPl/antigravity-fork-clone.git
 cd antigravity-fork-clone
 node install.mjs
 ```

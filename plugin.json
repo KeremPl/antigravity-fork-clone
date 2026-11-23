@@ -3,6 +3,12 @@
   "displayName": "Fork & Clone",
   "description": "Native message-level conversation forking and instant cloning inside Antigravity Desktop using Google's built-in ForkConversation engine.",
   "version": "3.0.0",
+  "author": {
+    "name": "KeremPl",
+    "url": "https://github.com/KeremPl"
+  },
+  "homepage": "https://github.com/KeremPl/antigravity-fork-clone",
+  "repository": "https://github.com/KeremPl/antigravity-fork-clone",
   "logo": "assets/logo.svg",
   "suggestedPrompts": [
     "Open the Fork & Clone panel for this conversation",
