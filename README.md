@@ -101,7 +101,7 @@ node --test
 
 ## Platform Status & Contributing
 
-- **Tested on:** Windows 11 + Antigravity Desktop `v2.34.0`
+- **Tested on:** Windows 10 + Antigravity Desktop `v2.34.0`
 - **macOS / Linux:** Written with pure cross-platform Node.js (`path.join`, `homedir()`), but community testing and PRs on macOS & Linux are very welcome!
 - **Known limitation:** Antigravity's `sidecar_sdk` iframe bridge does not currently expose a `scrollToStep` method to scroll the main chat pane to a clicked message; clicking a card instead expands the full prompt, reply, and tool list inline.
 
