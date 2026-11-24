@@ -95,6 +95,9 @@ export function resolveFallbackContextLimit(rawModel) {
   return 256000;
 }
 
+const SUBAGENT_TOOL_RE = /^(?:invoke_subagent|swarm|run_workflow)$/i;
+const SUBAGENT_TYPE_RE = /SUBAGENT/i;
+
 export function parseTranscriptLines(lines, childEdges = [], summaryStepCount = 0, executorLimit = 0) {
   const stepMap = new Map();
   for (const line of lines) {
@@ -129,6 +132,8 @@ export function parseTranscriptLines(lines, childEdges = [], summaryStepCount = 
   let lastPlannerObj = null;
   let lastCheckpointOrderIdx = -1;
   let lastCheckpointObj = null;
+  let hasSubagents = false;
+  let firstSubagentTurn = 0;
 
   for (let orderIdx = 0; orderIdx < orderedSteps.length; orderIdx++) {
     const obj = orderedSteps[orderIdx];
@@ -159,12 +164,20 @@ export function parseTranscriptLines(lines, childEdges = [], summaryStepCount = 
         tokenDelta: 0,
         model: '',
         inProgress: false,
+        usesSubagent: false,
       };
       turns.push(current);
       continue;
     }
 
     lastStepIsUser = false;
+    if (SUBAGENT_TYPE_RE.test(String(obj.type || '')) || SUBAGENT_TYPE_RE.test(String(obj.source || ''))) {
+      hasSubagents = true;
+      if (current) {
+        current.usesSubagent = true;
+        if (!firstSubagentTurn) firstSubagentTurn = current.turnNumber;
+      }
+    }
     if (!current) continue;
 
     if (obj.status === 'RUNNING' || obj.status === 'PENDING') {
@@ -194,6 +207,11 @@ export function parseTranscriptLines(lines, childEdges = [], summaryStepCount = 
         current.toolCount += obj.tool_calls.length;
         for (const tc of obj.tool_calls) {
           const nm = String(tc?.name || '').trim();
+          if (nm && SUBAGENT_TOOL_RE.test(nm)) {
+            hasSubagents = true;
+            current.usesSubagent = true;
+            if (!firstSubagentTurn) firstSubagentTurn = current.turnNumber;
+          }
           if (nm && !current.toolNames.includes(nm) && current.toolNames.length < 12) {
             current.toolNames.push(nm);
           }
@@ -298,6 +316,8 @@ export function parseTranscriptLines(lines, childEdges = [], summaryStepCount = 
     totalSteps,
     latestCompletedNonUserStep,
     busy: isBusy,
+    hasSubagents,
+    firstSubagentTurn,
     context: {
       usedTokens,
       contextLimit,

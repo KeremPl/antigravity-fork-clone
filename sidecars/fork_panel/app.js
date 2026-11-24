@@ -51,6 +51,14 @@
       creating: (title) => `Creating: ${title}…`,
       created: (title) => `Created: ${title}`,
       forkError: (msg) => `Fork failed: ${msg}`,
+      subagentNotice: (turn) =>
+        turn > 0
+          ? `Subagents used (from #${turn}) — Antigravity's native fork engine does not currently support chats that invoked subagents.`
+          : `Subagents detected — Antigravity's native fork engine does not currently support chats that invoked subagents.`,
+      subagentForkError: (turn) =>
+        turn > 0
+          ? `Native fork isn't supported by Antigravity for chats that invoked subagents (first used at #${turn}).`
+          : `Native fork isn't supported by Antigravity for chats that invoked subagents.`,
       justNow: 'just now',
       minsAgo: (m) => `${m}m ago`,
       hoursAgo: (h) => `${h}h ago`,
@@ -94,6 +102,14 @@
       creating: (title) => `Oluşturuluyor: ${title}…`,
       created: (title) => `Oluşturuldu: ${title}`,
       forkError: (msg) => `Fork hatası: ${msg}`,
+      subagentNotice: (turn) =>
+        turn > 0
+          ? `Alt ajan algılandı (#${turn}+) — Antigravity'nin yerel fork motoru, alt ajan (subagent) kullanılan sohbetleri henüz desteklemiyor.`
+          : `Alt ajan algılandı — Antigravity'nin yerel fork motoru, alt ajan (subagent) kullanılan sohbetleri henüz desteklemiyor.`,
+      subagentForkError: (turn) =>
+        turn > 0
+          ? `Antigravity, alt ajan (subagent) çağrılan sohbetlerde yerel fork'u henüz desteklemiyor (ilk kullanım: #${turn}).`
+          : `Antigravity, alt ajan (subagent) çağrılan sohbetlerde yerel fork'u henüz desteklemiyor.`,
       justNow: 'az önce',
       minsAgo: (m) => `${m}dk önce`,
       hoursAgo: (h) => `${h}s önce`,
@@ -387,6 +403,9 @@
   const CHEV_ICON =
     '<svg class="worked-chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg>';
 
+  const WARN_ICON =
+    '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.2 14 13H2L8 2.2Z"/><path d="M8 6.2v3.1M8 11.4h.01"/></svg>';
+
   function formatModelLabel(slug) {
     const raw = String(slug || '').trim();
     if (!raw) return '';
@@ -477,6 +496,18 @@
     if (shift !== 0) {
       pop.style.setProperty('--ctx-pop-shift', `${Math.round(shift)}px`);
     }
+  }
+
+  function renderSubagentNotice(snap) {
+    const el = $('subagent-notice');
+    if (!el) return;
+    if (!snap?.hasSubagents) {
+      el.classList.add('hidden');
+      el.innerHTML = '';
+      return;
+    }
+    el.classList.remove('hidden');
+    el.innerHTML = `${WARN_ICON}<span>${esc(t().subagentNotice(snap.firstSubagentTurn || 0))}</span>`;
   }
 
   function renderParentCrumb(snap) {
@@ -725,6 +756,7 @@
     $('panel').classList.remove('hidden');
 
     renderParentCrumb(snap);
+    renderSubagentNotice(snap);
     renderContextRing(snap);
     $('conv-title').textContent = snap.title || 'Untitled conversation';
     $('conv-title').title = `${snap.title || ''} (${snap.conversationId})`;
@@ -783,7 +815,9 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || `HTTP ${res.status}`);
+        const err = new Error(data.error || `HTTP ${res.status}`);
+        err.errorCode = data.errorCode || '';
+        throw err;
       }
 
       const createdTitle = data.title || pendingLabel;
@@ -802,7 +836,12 @@
         showToast('ok', L.created(createdTitle), data.newCascadeId);
       }
     } catch (err) {
-      showToast('err', L.forkError(err?.message || err));
+      const msg = String(err?.message || err || '');
+      if (err?.errorCode === 'SUBAGENT_UNSUPPORTED' || /subagent/i.test(msg)) {
+        showToast('err', L.subagentForkError(state.snap?.firstSubagentTurn || 0));
+      } else {
+        showToast('err', L.forkError(msg));
+      }
     } finally {
       state.busyAction = false;
       if (state.snap) render(state.snap);

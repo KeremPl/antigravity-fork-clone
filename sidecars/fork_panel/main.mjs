@@ -291,12 +291,8 @@ function parseTranscriptTurns(appData, convId, clientEtag = '') {
 
   const raw = readFileSync(logPath, 'utf-8');
   const lines = raw.split(/\r?\n/);
-  const { turns, totalSteps, latestCompletedNonUserStep, busy, context } = parseTranscriptLines(
-    lines,
-    childEdges,
-    summaryStepCount,
-    executorLimit
-  );
+  const { turns, totalSteps, latestCompletedNonUserStep, busy, hasSubagents, firstSubagentTurn, context } =
+    parseTranscriptLines(lines, childEdges, summaryStepCount, executorLimit);
 
   return {
     found: true,
@@ -307,6 +303,8 @@ function parseTranscriptTurns(appData, convId, clientEtag = '') {
     turnCount: turns.length,
     latestForkStepIndex: latestCompletedNonUserStep,
     busy,
+    hasSubagents,
+    firstSubagentTurn,
     context,
     parent: parentEdge
       ? {
@@ -471,10 +469,16 @@ app.api(
         title: finalTitle || parentTitle,
       };
     } catch (err) {
-      console.error('[fork-clone] ForkConversation failed:', err?.message || err);
+      const errMsg = err?.message || 'ForkConversation failed';
+      const isSubagentErr = /subagent/i.test(errMsg);
+      console.error('[fork-clone] ForkConversation failed:', errMsg);
       return new Response(
-        JSON.stringify({ ok: false, error: err?.message || 'ForkConversation failed' }),
-        { status: 500, contentType: 'application/json' }
+        JSON.stringify({
+          ok: false,
+          error: errMsg,
+          ...(isSubagentErr ? { errorCode: 'SUBAGENT_UNSUPPORTED' } : {}),
+        }),
+        { status: isSubagentErr ? 422 : 500, contentType: 'application/json' }
       );
     }
   },

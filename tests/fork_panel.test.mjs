@@ -260,5 +260,38 @@ describe('context window tracking & protobuf limit decoder', () => {
     const res = parseTranscriptLines(lines, [], 0, 256000);
     assert.equal(res.context.usedTokens, 4600);
     assert.equal(res.busy, true);
+    assert.equal(res.hasSubagents, false);
+    assert.equal(res.firstSubagentTurn, 0);
+  });
+
+  it('detects subagent invocations and records the first subagent turn', () => {
+    const lines = [
+      JSON.stringify({ step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', status: 'DONE', content: 'Turn 1' }),
+      JSON.stringify({ step_index: 1, source: 'MODEL', type: 'PLANNER_RESPONSE', status: 'DONE', content: 'Reply 1' }),
+      JSON.stringify({ step_index: 2, source: 'USER_EXPLICIT', type: 'USER_INPUT', status: 'DONE', content: 'Open site' }),
+      JSON.stringify({
+        step_index: 3,
+        source: 'MODEL',
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        tool_calls: [{ name: 'invoke_subagent' }],
+      }),
+      JSON.stringify({ step_index: 4, source: 'MODEL', type: 'PLANNER_RESPONSE', status: 'DONE', content: 'Done' }),
+    ];
+    const res = parseTranscriptLines(lines);
+    assert.equal(res.hasSubagents, true);
+    assert.equal(res.firstSubagentTurn, 2);
+    assert.equal(res.turns[0].usesSubagent, false);
+    assert.equal(res.turns[1].usesSubagent, true);
+  });
+
+  it('detects subagents via step type/source markers even without invoke_subagent tool call', () => {
+    const lines = [
+      JSON.stringify({ step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', status: 'DONE', content: 'Run task' }),
+      JSON.stringify({ step_index: 1, source: 'SUBAGENT', type: 'SUBAGENT_RESULT', status: 'DONE', content: 'ok' }),
+    ];
+    const res = parseTranscriptLines(lines);
+    assert.equal(res.hasSubagents, true);
+    assert.equal(res.firstSubagentTurn, 1);
   });
 });

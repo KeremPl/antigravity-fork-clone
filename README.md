@@ -106,7 +106,9 @@ node --test
 
 - **Tested on:** Windows 10 + Antigravity Desktop `v2.34.0`
 - **macOS / Linux:** Written with pure cross-platform Node.js (`path.join`, `homedir()`), but community testing and PRs on macOS & Linux are very welcome!
-- **Known limitation:** Antigravity's `sidecar_sdk` iframe bridge does not currently expose a `scrollToStep` method to scroll the main chat pane to a clicked message; instead, the panel renders the full Markdown conversation inline (and clicking any Compact row jumps directly to that turn in Chat view).
+- **Known limitations:**
+  - Antigravity's `sidecar_sdk` iframe bridge does not currently expose a `scrollToStep` method to scroll the main chat pane to a clicked message; instead, the panel renders the full Markdown conversation inline (and clicking any Compact row jumps directly to that turn in Chat view).
+  - Antigravity's native `ForkConversation` engine currently does not support forking conversations that have invoked subagents (e.g., Browser, Research, Image Generator, Swarm). The panel automatically detects subagent usage and surfaces an inline warning.
 
 Issues, bug reports, and pull requests are welcome.
 
